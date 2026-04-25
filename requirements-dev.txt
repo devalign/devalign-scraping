@@ -1,0 +1,9 @@
+-r requirements.txt
+
+# Testing
+pytest==8.2.0
+
+# Linting & Formatting
+flake8==7.0.0
+black==24.4.0
+pre-commit==3.7.0

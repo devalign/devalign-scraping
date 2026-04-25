@@ -1,0 +1,18 @@
+# Scraping Core
+playwright>=1.44.0
+beautifulsoup4>=4.12.3
+lxml>=5.2.1
+
+# HTTP y utilidades
+requests>=2.31.0
+fake-useragent>=1.4.0
+tenacity>=8.3.0
+
+# Data handling
+pandas>=2.2.2
+python-dotenv>=1.0.1
+supabase>=2.3.0
+
+# Calidad y limpieza de texto
+ftfy>=6.2.0
+html2text>=2024.2.26

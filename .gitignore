@@ -1,0 +1,29 @@
+# Datos — NUNCA subir datos reales al repositorio
+data/raw/
+data/processed/*.csv
+
+# Entorno
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Playwright
+playwright-browsers/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+uv.lock
+
+# Distribution
+*.egg-info/
+dist/
+build/
+debug_detail.html
