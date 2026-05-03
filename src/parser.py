@@ -78,21 +78,42 @@ class JobParser:
         "description": 'div[div-link="oferta"], section.box_border',
     }
 
-    def parse_listing_page(self, html: str) -> list[str]:
+    def parse_listing_page(self, html: str) -> list[tuple[str, str]]:
         """
-        Extrae URLs individuales de vacantes desde la página de listado.
+        Extrae (URL, título) de vacantes desde la página de listado.
+
+        Retorna tuplas en vez de solo URLs para permitir pre-filtrado por
+        título antes de navegar al detalle (ahorra ~5-8 seg por oferta).
+
+        Returns:
+            Lista de tuplas (url_completa, titulo_visible). El título puede
+            ser una cadena vacía si el anchor no tiene texto.
         """
         soup = BeautifulSoup(html, "lxml")
         # Intentar varios selectores de links por si cambia la clase
-        links = soup.select(self.SELECTORS["listing_links"]) or soup.select("article a.tw-block")
-        urls = []
+        links = (
+            soup.select(self.SELECTORS["listing_links"])
+            or soup.select("article a.tw-block")
+        )
+        seen: set[str] = set()
+        entries: list[tuple[str, str]] = []
+
         for a in links:
             href = a.get("href", "")
-            if href and "/ofertas-de-trabajo/" in href:
-                if href.startswith("/"):
-                    href = f"https://pe.computrabajo.com{href}"
-                urls.append(href)
-        return list(set(urls))
+            if not href or "/ofertas-de-trabajo/" not in href:
+                continue
+            if href.startswith("/"):
+                href = f"https://pe.computrabajo.com{href}"
+            # Deduplicar por URL (sin fragmento de tracking)
+            clean_href = href.split("#")[0]
+            if clean_href in seen:
+                continue
+            seen.add(clean_href)
+
+            title = a.get_text(strip=True)
+            entries.append((href, title))
+
+        return entries
 
     def parse_job_detail(self, html: str, url: str) -> JobOffer:
         """

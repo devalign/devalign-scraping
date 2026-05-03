@@ -3,10 +3,14 @@ Exportador de datos hacia Supabase.
 
 Realiza la inserción o actualización (upsert) de ofertas laborales
 en la base de datos de Supabase, utilizando la source_url como clave única.
+
+Nota: El filtrado de calidad (blacklist, skills, descripción mínima) se realiza
+ANTES de llegar aquí, en JobFilter. Este módulo solo recibe ofertas ya validadas.
 """
 
 import os
 from dataclasses import asdict
+
 from supabase import create_client, Client
 
 
@@ -14,10 +18,8 @@ class SupabaseExporter:
     """
     Exporta una lista de JobOffer a la base de datos de Supabase.
 
-    Maneja:
-    - Conexión mediante variables de entorno
-    - Upsert para evitar duplicados basados en source_url
-    - Filtrado básico de calidad
+    Responsabilidad única: upsert de registros ya validados.
+    El filtrado de calidad es responsabilidad de JobFilter.
     """
 
     def __init__(self):
@@ -32,65 +34,51 @@ class SupabaseExporter:
         self.supabase: Client = create_client(url, key)
         self.table_name = "job_offers"
 
-    def _is_valid_it_job(self, o) -> bool:
-        """
-        Valida si la oferta es realmente de IT y tiene datos suficientes.
-        """
-        # 1. Filtro por palabras prohibidas en el título (evita vendedores, CNC, etc.)
-        blacklist = [
-            'vendedor', 'ventas', 'cnc', 'matricero', 'comercial', 
-            'maquinaria', 'industrial', 'campo', 'consumo'
-        ]
-        title_lower = o.job_title.lower()
-        if any(word in title_lower for word in blacklist):
-            return False
-
-        # 2. Filtro: Debe tener al menos una habilidad técnica (lo que pidió el partner)
-        if not o.hard_skills:
-            return False
-
-        # 3. Filtro: Descripción mínima (subimos a 150 chars para calidad)
-        if len(o.full_description) < 150:
-            return False
-
-        return True
-
     def save(self, offers: list) -> None:
         """
-        Sube la lista de ofertas a Supabase tras un filtrado estricto.
+        Sube una lista de JobOffer (dataclasses) a Supabase.
+
+        Las ofertas ya vienen validadas por JobFilter — no se filtra aquí.
 
         Args:
-            offers: Lista de JobOffer dataclass instances.
+            offers: Lista de instancias de JobOffer.
         """
         if not offers:
             print("[WARN] No hay ofertas para subir a Supabase.")
             return
 
-        # Convertir dataclasses a dicts y filtrar por calidad estricta
-        valid_records = []
-        for o in offers:
-            if self._is_valid_it_job(o):
-                record = asdict(o)
-                valid_records.append(record)
+        records = [asdict(o) for o in offers]
+        self._upsert(records)
 
-        if not valid_records:
-            print("[WARN] No hay ofertas válidas tras el filtrado estricto.")
+    def save_dicts(self, records: list[dict]) -> None:
+        """
+        Sube una lista de ofertas ya en formato dict (cargadas desde checkpoint).
+
+        Args:
+            records: Lista de dicts con la estructura de JobOffer.
+        """
+        if not records:
+            print("[WARN] No hay registros para subir a Supabase.")
             return
 
-        print(f"[*] Subiendo {len(valid_records)} ofertas a Supabase...")
+        self._upsert(records)
 
+    def _upsert(self, records: list[dict]) -> None:
+        """
+        Ejecuta el upsert a Supabase usando source_url como constraint único.
+
+        Args:
+            records: Lista de dicts con la estructura de la tabla job_offers.
+        """
+        print(f"[*] Subiendo {len(records)} ofertas a Supabase...")
         try:
-            # Upsert usando source_url como constraint para evitar duplicados
-            # Nota: on_conflict='source_url' requiere que la columna tenga un UNIQUE constraint
             response = (
                 self.supabase.table(self.table_name)
-                .upsert(valid_records, on_conflict="source_url")
+                .upsert(records, on_conflict="source_url")
                 .execute()
             )
-
             print(
                 f"[OK] Supabase: {len(response.data)} registros procesados exitosamente."
             )
-
         except Exception as e:
             print(f"[ERROR] Error al subir a Supabase: {e}")

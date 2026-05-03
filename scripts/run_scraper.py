@@ -2,14 +2,22 @@
 Entry point principal del scraper de ofertas laborales.
 
 Uso:
-    python scripts/run_scraper.py
-    python scripts/run_scraper.py --jobs 50 --output data/processed/custom.csv
-    python scripts/run_scraper.py --jobs 10 --no-headless
+    python scripts/run_scraper.py                         # Ejecución normal
+    python scripts/run_scraper.py --jobs 300              # Limitar a 300 ofertas IT
+    python scripts/run_scraper.py --no-headless           # Browser visible (debug)
+    python scripts/run_scraper.py --no-supabase           # Solo guardar local
+
+Comportamiento resiliente:
+    - Si se interrumpe con Ctrl+C, guarda todo lo recolectado hasta ese momento.
+    - Al iniciar, detecta automáticamente si hay una sesión previa con progreso
+      y ofrece continuar desde donde se dejó (sin re-scrapear URLs procesadas).
+    - Guarda checkpoints incrementales cada 20 ofertas IT válidas.
 """
 
 import argparse
 import os
 import random
+import signal
 import sys
 import time
 
@@ -19,9 +27,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 # Agregar el directorio raíz del proyecto al path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.browser import BrowserManager  # noqa: E402
-from src.parser import JobParser  # noqa: E402
-from src.cleaner import TextCleaner  # noqa: E402
+from src.browser import BrowserManager        # noqa: E402
+from src.cleaner import TextCleaner          # noqa: E402
+from src.job_filter import JobFilter         # noqa: E402
+from src.parser import JobParser             # noqa: E402
+from src.session import SessionManager       # noqa: E402
 from src.supabase_exporter import SupabaseExporter  # noqa: E402
 
 # Cargar .env si existe
@@ -33,6 +43,7 @@ DEFAULT_URL = os.getenv(
 )
 DEFAULT_JOBS = int(os.getenv("TARGET_JOBS", "100"))
 DEFAULT_HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
+FLUSH_EVERY = 20  # Checkpoint automático cada N ofertas IT válidas
 
 
 @retry(
@@ -51,7 +62,6 @@ def fetch_page(page, url: str) -> str:
         HTML renderizado de la página.
     """
     page.goto(url, wait_until="networkidle", timeout=30000)
-    # Pequeño delay extra para asegurar renderizado de JS dinámico
     time.sleep(1)
     return page.content()
 
@@ -65,7 +75,7 @@ def parse_args():
         "--jobs",
         type=int,
         default=DEFAULT_JOBS,
-        help=f"Número de ofertas a recolectar (default: {DEFAULT_JOBS})",
+        help=f"Número de ofertas IT válidas a recolectar (default: {DEFAULT_JOBS})",
     )
     parser.add_argument(
         "--url",
@@ -92,129 +102,183 @@ def parse_args():
     return parser.parse_args()
 
 
-def run(target_jobs: int, base_url: str, headless: bool, no_supabase: bool, output_file: str):
+def _prompt_resume() -> bool:
     """
-    Ejecuta el pipeline completo de scraping.
+    Detecta si hay una sesión previa y pregunta al usuario si desea reanudarla.
+
+    Returns:
+        True si se debe cargar el checkpoint, False para empezar desde cero.
+    """
+    checkpoint = SessionManager.find_recent_checkpoint()
+    if not checkpoint:
+        return False
+
+    # Leer metadata del checkpoint sin cargarlo completo
+    try:
+        import json
+        with open(checkpoint, encoding="utf-8") as f:
+            data = json.load(f)
+        meta = data.get("metadata", {})
+        collected = meta.get("total_collected", 0)
+        target = meta.get("target_jobs", "?")
+        saved_at = meta.get("saved_at", "?")[:19].replace("T", " ")
+    except Exception:
+        return False
+
+    print(f"\n[!] Sesión previa encontrada: {checkpoint.name}")
+    print(f"    Progreso: {collected}/{target} ofertas IT")
+    print(f"    Guardada: {saved_at} UTC")
+
+    answer = input("\n¿Deseas continuar desde donde se dejó? (S/n): ").strip().lower()
+    return answer in ("", "s", "si", "sí", "yes", "y")
+
+
+def run(
+    target_jobs: int,
+    base_url: str,
+    headless: bool,
+    no_supabase: bool,
+    output_file: str,
+):
+    """
+    Ejecuta el pipeline completo de scraping con resiliencia.
 
     Args:
-        target_jobs: Número de ofertas a recolectar.
+        target_jobs: Número de ofertas IT válidas a recolectar.
         base_url: URL base del portal de empleo.
         headless: Si True, el browser no muestra ventana.
+        no_supabase: Si True, omite la exportación a Supabase.
+        output_file: Ruta del archivo JSON local de salida.
     """
     parser = JobParser()
     cleaner = TextCleaner()
+    job_filter = JobFilter()
     exporter = None if no_supabase else SupabaseExporter()
-    collected = []
-    errors = 0
 
-    print("[*] DevAlign Scraper")
-    print(f"   Target: {base_url}")
-    print(f"   Jobs: {target_jobs}")
-    print(f"   Headless: {headless}")
-    print(f"   No Supabase: {no_supabase}")
+    # ── Inicializar sesión ────────────────────────────────────────────
+    session = SessionManager(
+        output_file=output_file,
+        target_jobs=target_jobs,
+        base_url=base_url,
+        flush_every=FLUSH_EVERY,
+    )
+
+    # ── Detección automática de sesión previa ─────────────────────────
+    if _prompt_resume():
+        checkpoint = SessionManager.find_recent_checkpoint()
+        session.load_checkpoint(checkpoint)
+
+    # ── Signal handler para Ctrl+C / SIGTERM ─────────────────────────
+    # En vez de lanzar KeyboardInterrupt y matar el proceso, activamos
+    # el flag de la sesión para que el loop salga limpiamente.
+    signal.signal(signal.SIGINT, lambda *_: session.request_shutdown())
+    signal.signal(signal.SIGTERM, lambda *_: session.request_shutdown())
+
+    print("\n[*] DevAlign Scraper")
+    print(f"   Target URL:  {base_url}")
+    print(f"   Meta IT:     {target_jobs} ofertas válidas")
+    print(f"   Ya cargadas: {session.count}")
+    print(f"   Headless:    {headless}")
+    print(f"   Supabase:    {not no_supabase}")
+    print(f"   Checkpoint:  cada {FLUSH_EVERY} ofertas")
     print(f"{'-' * 50}")
 
-    with BrowserManager(headless=headless) as context:
-        page = context.new_page()
-        current_page = 1
+    # ── Loop principal ────────────────────────────────────────────────
+    try:
+        with BrowserManager(headless=headless) as context:
+            page = context.new_page()
 
-        while len(collected) < target_jobs:
-            url = f"{base_url}?p={current_page}"
-            print(f"\n[Page {current_page}]: {url}")
+            while not session.should_stop and session.count < target_jobs:
+                url = f"{base_url}?p={session.current_page}"
+                print(f"\n[Page {session.current_page}]: {url}")
 
-            try:
-                html = fetch_page(page, url)
-            except Exception as e:
-                print(f"   [ERROR] Error al cargar listado: {e}")
-                errors += 1
-                if errors > 5:
-                    print("   [ABORT] Demasiados errores. Abortando.")
-                    break
-                current_page += 1
-                continue
-
-            job_urls = parser.parse_listing_page(html)
-
-            if not job_urls:
-                print(f"   [WARN] Sin más resultados en página {current_page}.")
-                break
-
-            print(f"   [#] {len(job_urls)} vacantes encontradas")
-
-            for job_url in job_urls:
-                if len(collected) >= target_jobs:
-                    break
-
+                # Cargar página de listado
                 try:
-                    detail_html = fetch_page(page, job_url)
-                    # Debug: Guardar el primer HTML recibido para inspección
-                    if len(collected) == 0:
-                        with open("debug_detail.html", "w", encoding="utf-8") as f:
-                            f.write(detail_html)
-                        print("   [DEBUG] Primer HTML guardado en debug_detail.html")
+                    html = fetch_page(page, url)
+                except Exception as e:
+                    print(f"   [ERROR] Error al cargar listado: {e}")
+                    session.register_error()
+                    if session.errors > 5:
+                        print("   [ABORT] Demasiados errores consecutivos.")
+                        break
+                    session.current_page += 1
+                    continue
 
-                    offer = parser.parse_job_detail(detail_html, job_url)
+                job_entries = parser.parse_listing_page(html)
 
-                    if not offer.job_title or not offer.full_description:
-                        # Reintento con wait explícito si faltan datos críticos
-                        try:
-                            # Esperar al título o al contenedor de descripción
-                            page.wait_for_selector(
-                                parser.SELECTORS["job_title"], timeout=3000
+                if not job_entries:
+                    print(f"   [WARN] Sin más resultados en página {session.current_page}.")
+                    break
+
+                print(f"   [#] {len(job_entries)} vacantes encontradas")
+
+                for job_url, job_title in job_entries:
+                    if session.should_stop or session.count >= target_jobs:
+                        break
+
+                    # ── Capa 1: Pre-filtro por título/URL (sin navegar) ──
+                    if not job_filter.is_relevant(job_title, job_url):
+                        print(f"   [SKIP] {job_title[:65]}")
+                        session.register_skip()
+                        session.mark_processed(job_url)
+                        continue
+
+                    # ── Skip si ya fue procesada en sesión previa (resume) ──
+                    if session.is_already_processed(job_url):
+                        print(f"   [DONE] Ya procesada: {job_title[:55]}")
+                        continue
+
+                    # ── Navegar al detalle ───────────────────────────────
+                    try:
+                        detail_html = fetch_page(page, job_url)
+
+                        offer = parser.parse_job_detail(detail_html, job_url)
+
+                        # Reintento si faltan datos críticos (renderizado lento)
+                        if not offer.job_title or not offer.full_description:
+                            try:
+                                page.wait_for_selector(
+                                    parser.SELECTORS["job_title"], timeout=3000
+                                )
+                                page.wait_for_selector(
+                                    parser.SELECTORS["description"], timeout=3000
+                                )
+                                detail_html = page.content()
+                                offer = parser.parse_job_detail(detail_html, job_url)
+                            except Exception:
+                                pass
+
+                        offer = cleaner.clean(offer)
+
+                        # ── Capa 2: Post-filtro (skills + desc mínima) ───
+                        if not job_filter.is_valid_it_job(offer):
+                            print(
+                                f"   [FILTERED] {offer.job_title[:55]} "
+                                f"(skills: {len(offer.hard_skills)}, "
+                                f"desc: {len(offer.full_description)}c)"
                             )
-                            page.wait_for_selector(
-                                parser.SELECTORS["description"], timeout=3000
-                            )
-                            detail_html = page.content()
-                            offer = parser.parse_job_detail(detail_html, job_url)
-                        except Exception:
-                            pass
+                            session.register_filtered()
+                            session.mark_processed(job_url)
+                            continue
 
-                    if not offer.job_title or not offer.full_description:
+                        session.add_offer(offer)  # Auto-flush cada FLUSH_EVERY
                         print(
-                            f"   [WARN] Datos incompletos en {job_url} "
-                            f"(Título: {bool(offer.job_title)}, "
-                            f"Desc: {len(offer.full_description)} chars)"
+                            f"   [{session.count}/{target_jobs}] "
+                            f"[OK] {offer.job_title[:60]}"
                         )
 
-                    offer = cleaner.clean(offer)
-                    collected.append(offer)
-                    print(
-                        f"   [{len(collected)}/{target_jobs}] "
-                        f"[OK] {offer.job_title[:60]}"
-                    )
-                except Exception as e:
-                    print(f"   [ERROR] Error en {job_url}: {e}")
-                    errors += 1
+                    except Exception as e:
+                        print(f"   [ERROR] Error en {job_url}: {e}")
+                        session.register_error()
 
-                # Delay aleatorio — simula comportamiento humano, reduce bans
-                time.sleep(random.uniform(2.5, 5.0))
+                    # Delay anti-ban — simula comportamiento humano
+                    time.sleep(random.uniform(2.5, 5.0))
 
-            current_page += 1
+                session.current_page += 1
 
-    print(f"\n{'-' * 50}")
-    print("Summary:")
-    print(f"   Recolectadas: {len(collected)}")
-    print(f"   Errores: {errors}")
-
-    if collected:
-        if not no_supabase and exporter:
-            exporter.save(collected)
-        
-        # Siempre guardamos una copia local para validación cuando estamos en modo prueba
-        import json
-        from dataclasses import asdict
-        
-        # Asegurar que el directorio existe
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump([asdict(o) for o in collected], f, ensure_ascii=False, indent=2)
-        
-        print(f"\n[OK] Datos guardados localmente en: {output_file}")
-        print(f"[*] Puedes revisar los nuevos campos (salario, modalidad, etc.) en ese archivo.")
-    else:
-        print("\n[!] No se recolectaron ofertas.")
+    finally:
+        # Siempre se ejecuta: guarda lo que haya aunque se haya interrumpido
+        session.save_final(exporter=exporter)
 
 
 if __name__ == "__main__":
@@ -225,5 +289,5 @@ if __name__ == "__main__":
         base_url=args.url,
         headless=headless,
         no_supabase=args.no_supabase,
-        output_file=args.output
+        output_file=args.output,
     )

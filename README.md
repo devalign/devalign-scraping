@@ -10,7 +10,13 @@
 
 ## 📋 Descripción
 
-Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright (para renderizado JS) y BeautifulSoup (para parseo HTML). Los datos se limpian rigurosamente y se exportan automáticamente a **Supabase**, listos para ser consumidos por modelos de IA y Sentence Transformers (Algoritmo K-Prototypes).
+Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright y BeautifulSoup. 
+
+**Características principales:**
+- **Resiliencia:** Sistema de checkpoints cada 20 ofertas. Si el proceso se interrumpe, no se pierden los datos.
+- **Auto-Resume:** Detecta automáticamente sesiones interrumpidas y ofrece continuar desde donde se dejó.
+- **Filtro IT Inteligente:** Pre-filtrado por título/URL antes de navegar, ahorrando ~40% del tiempo de scraping al ignorar puestos no relacionados.
+- **Exportación Robusta:** Upsert automático a **Supabase**, evitando duplicados y manteniendo la integridad de los datos para modelos de ML.
 
 ### Variables Extraídas
 
@@ -63,8 +69,8 @@ cp .env.example .env
 ## ⚡ Uso
 
 ```bash
-# Ejecución por defecto (Sube a Supabase automáticamente)
-python scripts/run_scraper.py --jobs 100
+# Ejecución por defecto (Detección de checkpoints automática)
+python scripts/run_scraper.py --jobs 300
 
 # Prueba local (Exporta a JSON sin tocar Supabase)
 python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
@@ -72,6 +78,9 @@ python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
 # Modo visible (debug)
 python scripts/run_scraper.py --jobs 10 --no-headless
 ```
+
+> [!TIP]
+> Si el scraper se detiene con **Ctrl+C**, se guardará el progreso actual. Al reiniciarlo, el script te preguntará si deseas retomar la sesión anterior.
 
 ---
 
@@ -97,16 +106,18 @@ black src/ scripts/ tests/
 
 ```
 devalign-scraping/
-├── .github/workflows/lint.yml   # CI: flake8 en cada push
 ├── data/
-│   └── test_run.json            # Pruebas locales de validación
+│   ├── checkpoints/             # Sesiones interrumpidas (auto-limpieza)
+│   └── test_run.json            # Resultados locales
 ├── src/
-│   ├── browser.py               # Configuración de Playwright
-│   ├── parser.py                # Extracción robusta con BeautifulSoup y Regex
-│   ├── cleaner.py               # Pipeline de limpieza de texto para NLP
-│   └── supabase_exporter.py     # Cliente de Supabase con UPSERT y filtrado
+│   ├── browser.py               # Ciclo de vida de Playwright
+│   ├── parser.py                # Extracción con BeautifulSoup y Regex
+│   ├── cleaner.py               # Pipeline de limpieza NLP
+│   ├── job_filter.py            # Pre/Post filtrado de calidad IT
+│   ├── session.py               # Orquestación de persistencia y checkpoints
+│   └── supabase_exporter.py     # Cliente Supabase (Upsert)
 ├── scripts/
-│   └── run_scraper.py           # Entry point principal
+│   └── run_scraper.py           # Entry point con Graceful Shutdown
 ├── tests/
 │   ├── test_parser.py
 │   └── test_cleaner.py
