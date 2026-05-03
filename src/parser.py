@@ -39,6 +39,7 @@ class JobOffer:
     education_level: str = ""  # Ej: "universitaria", "técnica", "indiferente"
     full_description: str = ""  # TEXTO ÍNTEGRO — crítico para IA
     source_url: str = ""
+    portal: str = ""              # Ej: "computrabajo", "getonboard"
     scraped_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -182,7 +183,7 @@ class ComputrabajoParser(BaseParser):
         soup = BeautifulSoup(html, "lxml")
         # Normalizar URL quitando fragmentos de tracking (ej. #lc=ListOffers...)
         clean_url = url.split('#')[0]
-        offer = JobOffer(source_url=clean_url)
+        offer = JobOffer(source_url=clean_url, portal=self.SITE_NAME)
 
         # 1. Título (Más robusto)
         title_tag = soup.select_one(self.SELECTORS["job_title"])

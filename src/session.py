@@ -68,6 +68,7 @@ class SessionManager:
         self._shutdown_requested: bool = False
         self._started_at: str = datetime.now(timezone.utc).isoformat()
         self._checkpoint_path: Path | None = None
+        self._session_checkpoints: list[Path] = []
 
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -175,6 +176,7 @@ class SessionManager:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
         self._checkpoint_path = path
+        self._session_checkpoints.append(path)
         print(f"   [CHECKPOINT] {self.count} ofertas guardadas → {path.name}")
 
         # Limpiar checkpoints viejos (más de RECENT_CHECKPOINT_HOURS horas)
@@ -290,10 +292,15 @@ class SessionManager:
 
         print(f"\n[OK] Datos guardados en: {self.output_file}")
 
-        # Eliminar checkpoint si terminó con éxito (no fue interrumpido)
-        if not self._shutdown_requested and self._checkpoint_path:
-            try:
-                self._checkpoint_path.unlink()
-                print("[OK] Checkpoint limpiado.")
-            except OSError:
-                pass
+        # Eliminar checkpoints si terminó con éxito (no fue interrumpido)
+        if not self._shutdown_requested and self._session_checkpoints:
+            cleaned = 0
+            for ckpt in self._session_checkpoints:
+                try:
+                    if ckpt.exists():
+                        ckpt.unlink()
+                        cleaned += 1
+                except OSError:
+                    pass
+            if cleaned > 0:
+                print(f"[OK] {cleaned} checkpoint(s) de la sesión limpiados.")

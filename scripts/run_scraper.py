@@ -2,11 +2,12 @@
 Entry point principal del scraper de ofertas laborales.
 
 Uso:
-    python scripts/run_scraper.py                               # Computrabajo (default)
-    python scripts/run_scraper.py --site getonboard --jobs 100  # GetOnBoard
+    python scripts/run_scraper.py                               # GetOnBoard (default — API, más rápido)
+    python scripts/run_scraper.py --site computrabajo           # Computrabajo (HTML, Playwright)
+    python scripts/run_scraper.py --site getonboard --jobs 100  # GetOnBoard con límite
     python scripts/run_scraper.py --site getonboard --categories programming mobile-developer
     python scripts/run_scraper.py --jobs 300                    # Limitar a 300 ofertas IT
-    python scripts/run_scraper.py --no-headless                 # Browser visible (debug)
+    python scripts/run_scraper.py --no-headless                 # Browser visible (debug, solo CT)
     python scripts/run_scraper.py --no-supabase                 # Solo guardar local
 
 Comportamiento resiliente:
@@ -45,7 +46,7 @@ SITE_DEFAULTS: dict[str, str] = {
     "computrabajo": "https://pe.computrabajo.com/trabajo-de-desarrollador",
     "getonboard": "https://www.getonbrd.com",
 }
-DEFAULT_SITE = os.getenv("TARGET_SITE", "computrabajo")
+DEFAULT_SITE = os.getenv("TARGET_SITE", "getonboard")
 DEFAULT_URL = os.getenv(
     "TARGET_URL", SITE_DEFAULTS.get(DEFAULT_SITE, SITE_DEFAULTS["computrabajo"])
 )

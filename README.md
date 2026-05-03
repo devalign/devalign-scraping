@@ -76,11 +76,11 @@ cp .env.example .env
 ## ⚡ Uso
 
 ```bash
-# Computrabajo — ejecución por defecto
+# GetOnBoard — ejecución por defecto (API, más rápido)
 python scripts/run_scraper.py --jobs 300
 
-# GetOnBoard — con categorías por defecto (programming, mobile, sysadmin)
-python scripts/run_scraper.py --site getonboard --jobs 100
+# Computrabajo — portal secundario (HTML, Playwright)
+python scripts/run_scraper.py --site computrabajo --jobs 100
 
 # GetOnBoard — con categorías específicas
 python scripts/run_scraper.py --site getonboard --categories programming mobile-developer --jobs 50
@@ -97,7 +97,7 @@ python scripts/run_scraper.py --jobs 10 --no-headless
 
 | Argumento | Default | Descripción |
 |---|---|---|
-| `--site` | `computrabajo` | Portal: `computrabajo` \| `getonboard` |
+| `--site` | `getonboard` | Portal: `getonboard` \| `computrabajo` |
 | `--jobs` | `100` | Número de ofertas IT válidas a recolectar |
 | `--categories` | *(ver abajo)* | [GOB] Categorías a scrapear (espacio-separadas) |
 | `--url` | *(por portal)* | Override manual de URL base |

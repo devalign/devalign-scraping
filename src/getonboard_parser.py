@@ -245,7 +245,7 @@ class GetOnBoardParser(BaseParser):
         cached = self._job_data_cache.get(url, {})
         attrs = cached.get("attrs", {})
 
-        offer = JobOffer(source_url=url)
+        offer = JobOffer(source_url=url, portal=self.SITE_NAME)
 
         # ── 1. Título ────────────────────────────────────────────────────
         offer.job_title = attrs.get("title", "")
