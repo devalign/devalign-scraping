@@ -99,7 +99,9 @@ class JobParser:
         Parsea una página de detalle y retorna un JobOffer poblado.
         """
         soup = BeautifulSoup(html, "lxml")
-        offer = JobOffer(source_url=url)
+        # Normalizar URL quitando fragmentos de tracking (ej. #lc=ListOffers...)
+        clean_url = url.split('#')[0]
+        offer = JobOffer(source_url=clean_url)
 
         # 1. Título (Más robusto)
         title_tag = soup.select_one(self.SELECTORS["job_title"])
@@ -325,11 +327,13 @@ class JobParser:
             if re.search(rf"\b{re.escape(s)}\b", desc_lower)
         ]
 
-        # Años de experiencia con regex
-        exp_match = re.search(
-            r"(\d+)\s*(?:a\s*\d+)?\s*años?\s*de\s*experiencia", desc_lower
+        # Años de experiencia con regex (Tomamos la ÚLTIMA mención)
+        # Esto evita capturar cosas como "Empresa con 24 años de experiencia en el mercado"
+        # ya que los requerimientos reales del candidato suelen estar al final del texto.
+        exp_matches = re.findall(
+            r"\d+\s*(?:a\s*\d+)?\s*años?\s*de\s*experiencia", desc_lower
         )
-        offer.experience_years = exp_match.group(0) if exp_match else "No especificado"
+        offer.experience_years = exp_matches[-1] if exp_matches else "No especificado"
 
         # Nivel educativo
         edu_map = {
