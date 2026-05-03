@@ -1,8 +1,11 @@
-"""Tests para JobParser: extracción de URLs y parseo de detalle."""
+"""Tests para ComputrabajoParser: extracción de URLs y parseo de detalle."""
 
 import pytest
 
-from src.parser import JobParser, JobOffer
+from src.parser import ComputrabajoParser, JobOffer
+
+# Alias de compatibilidad — los tests usan JobParser por simplicidad
+JobParser = ComputrabajoParser
 
 
 # --- Fixtures: HTML mock ---

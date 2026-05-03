@@ -2,10 +2,12 @@
 Entry point principal del scraper de ofertas laborales.
 
 Uso:
-    python scripts/run_scraper.py                         # Ejecución normal
-    python scripts/run_scraper.py --jobs 300              # Limitar a 300 ofertas IT
-    python scripts/run_scraper.py --no-headless           # Browser visible (debug)
-    python scripts/run_scraper.py --no-supabase           # Solo guardar local
+    python scripts/run_scraper.py                               # Computrabajo (default)
+    python scripts/run_scraper.py --site getonboard --jobs 100  # GetOnBoard
+    python scripts/run_scraper.py --site getonboard --categories programming mobile-developer
+    python scripts/run_scraper.py --jobs 300                    # Limitar a 300 ofertas IT
+    python scripts/run_scraper.py --no-headless                 # Browser visible (debug)
+    python scripts/run_scraper.py --no-supabase                 # Solo guardar local
 
 Comportamiento resiliente:
     - Si se interrumpe con Ctrl+C, guarda todo lo recolectado hasta ese momento.
@@ -29,17 +31,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.browser import BrowserManager        # noqa: E402
 from src.cleaner import TextCleaner          # noqa: E402
+from src.getonboard_parser import GetOnBoardParser   # noqa: E402
 from src.job_filter import JobFilter         # noqa: E402
-from src.parser import JobParser             # noqa: E402
+from src.parser import ComputrabajoParser    # noqa: E402
 from src.session import SessionManager       # noqa: E402
 from src.supabase_exporter import SupabaseExporter  # noqa: E402
 
 # Cargar .env si existe
 load_dotenv()
 
-# Configuración por defecto desde .env o valores hardcoded
+# URL y configuración por defecto según el portal
+SITE_DEFAULTS: dict[str, str] = {
+    "computrabajo": "https://pe.computrabajo.com/trabajo-de-desarrollador",
+    "getonboard": "https://www.getonbrd.com",
+}
+DEFAULT_SITE = os.getenv("TARGET_SITE", "computrabajo")
 DEFAULT_URL = os.getenv(
-    "TARGET_URL", "https://pe.computrabajo.com/trabajo-de-desarrollador"
+    "TARGET_URL", SITE_DEFAULTS.get(DEFAULT_SITE, SITE_DEFAULTS["computrabajo"])
 )
 DEFAULT_JOBS = int(os.getenv("TARGET_JOBS", "100"))
 DEFAULT_HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
@@ -69,7 +77,14 @@ def fetch_page(page, url: str) -> str:
 def parse_args():
     """Parsea argumentos de línea de comandos."""
     parser = argparse.ArgumentParser(
-        description="[*] DevAlign Scraper — Extrae ofertas laborales de Computrabajo"
+        description="[*] DevAlign Scraper — Extrae ofertas laborales IT"
+    )
+    parser.add_argument(
+        "--site",
+        type=str,
+        default=DEFAULT_SITE,
+        choices=["computrabajo", "getonboard"],
+        help=f"Portal de empleo a scrapear (default: {DEFAULT_SITE})",
     )
     parser.add_argument(
         "--jobs",
@@ -80,13 +95,23 @@ def parse_args():
     parser.add_argument(
         "--url",
         type=str,
-        default=DEFAULT_URL,
-        help=f"URL base del portal (default: {DEFAULT_URL})",
+        default=None,
+        help="URL base del portal (override manual; por defecto se usa el del --site)",
+    )
+    parser.add_argument(
+        "--categories",
+        nargs="+",
+        default=None,
+        metavar="CATEGORY",
+        help=(
+            "[Solo GetOnBoard] Categorías a scrapear. "
+            "Ej: --categories programming mobile-developer sysadmin-devops-qa"
+        ),
     )
     parser.add_argument(
         "--no-headless",
         action="store_true",
-        help="Ejecutar browser en modo visible (para debug)",
+        help="Ejecutar browser en modo visible (para debug; solo aplica a Computrabajo)",
     )
     parser.add_argument(
         "--no-supabase",
@@ -100,6 +125,22 @@ def parse_args():
         help="Ruta para guardar el archivo local de resultados (default: data/test_run.json)",
     )
     return parser.parse_args()
+
+
+def _build_parser(site: str, categories: list[str] | None):
+    """
+    Factory: instancia el parser correcto según el portal seleccionado.
+
+    Args:
+        site:       Identificador del portal ("computrabajo" | "getonboard").
+        categories: Lista de categorías (solo relevante para GetOnBoard).
+
+    Returns:
+        Instancia de BaseParser lista para usar.
+    """
+    if site == "getonboard":
+        return GetOnBoardParser(categories=categories)
+    return ComputrabajoParser()
 
 
 def _prompt_resume() -> bool:
@@ -139,23 +180,27 @@ def run(
     headless: bool,
     no_supabase: bool,
     output_file: str,
+    site: str = "computrabajo",
+    categories: list[str] | None = None,
 ):
     """
     Ejecuta el pipeline completo de scraping con resiliencia.
 
     Args:
         target_jobs: Número de ofertas IT válidas a recolectar.
-        base_url: URL base del portal de empleo.
-        headless: Si True, el browser no muestra ventana.
+        base_url:    URL base del portal (solo relevante para Computrabajo).
+        headless:    Si True, el browser no muestra ventana (solo Computrabajo).
         no_supabase: Si True, omite la exportación a Supabase.
         output_file: Ruta del archivo JSON local de salida.
+        site:        Portal a scrapear ("computrabajo" | "getonboard").
+        categories:  Categorías GetOnBoard (None usa el default del parser).
     """
-    parser = JobParser()
+    parser = _build_parser(site, categories)
     cleaner = TextCleaner()
     job_filter = JobFilter()
     exporter = None if no_supabase else SupabaseExporter()
 
-    # ── Inicializar sesión ────────────────────────────────────────────
+    # ── Inicializar sesión ─────────────────────────────────────────────
     session = SessionManager(
         output_file=output_file,
         target_jobs=target_jobs,
@@ -163,18 +208,17 @@ def run(
         flush_every=FLUSH_EVERY,
     )
 
-    # ── Detección automática de sesión previa ─────────────────────────
+    # ── Detección automática de sesión previa ──────────────────────────
     if _prompt_resume():
         checkpoint = SessionManager.find_recent_checkpoint()
         session.load_checkpoint(checkpoint)
 
-    # ── Signal handler para Ctrl+C / SIGTERM ─────────────────────────
-    # En vez de lanzar KeyboardInterrupt y matar el proceso, activamos
-    # el flag de la sesión para que el loop salga limpiamente.
+    # ── Signal handler para Ctrl+C / SIGTERM ──────────────────────────
     signal.signal(signal.SIGINT, lambda *_: session.request_shutdown())
     signal.signal(signal.SIGTERM, lambda *_: session.request_shutdown())
 
     print("\n[*] DevAlign Scraper")
+    print(f"   Portal:      {site.capitalize()}")
     print(f"   Target URL:  {base_url}")
     print(f"   Meta IT:     {target_jobs} ofertas válidas")
     print(f"   Ya cargadas: {session.count}")
@@ -183,18 +227,22 @@ def run(
     print(f"   Checkpoint:  cada {FLUSH_EVERY} ofertas")
     print(f"{'-' * 50}")
 
-    # ── Loop principal ────────────────────────────────────────────────
+    # ── GetOnBoard usa API REST; no abrimos Playwright ─────────────────
+    needs_browser = (site == "computrabajo")
+
+    # ── Loop principal ─────────────────────────────────────────────────
     try:
         with BrowserManager(headless=headless) as context:
-            page = context.new_page()
+            page = context.new_page() if needs_browser else None
 
             while not session.should_stop and session.count < target_jobs:
-                url = f"{base_url}?p={session.current_page}"
-                print(f"\n[Page {session.current_page}]: {url}")
+                print(f"\n[Page {session.current_page}]")
 
-                # Cargar página de listado
+                # ── Obtener listado ────────────────────────────────────
                 try:
-                    html = fetch_page(page, url)
+                    job_entries = parser.fetch_job_listings(
+                        page, session.current_page
+                    )
                 except Exception as e:
                     print(f"   [ERROR] Error al cargar listado: {e}")
                     session.register_error()
@@ -204,10 +252,10 @@ def run(
                     session.current_page += 1
                     continue
 
-                job_entries = parser.parse_listing_page(html)
-
                 if not job_entries:
-                    print(f"   [WARN] Sin más resultados en página {session.current_page}.")
+                    print(
+                        f"   [WARN] Sin más resultados en página {session.current_page}."
+                    )
                     break
 
                 print(f"   [#] {len(job_entries)} vacantes encontradas")
@@ -216,41 +264,38 @@ def run(
                     if session.should_stop or session.count >= target_jobs:
                         break
 
-                    # ── Capa 1: Pre-filtro por título/URL (sin navegar) ──
+                    # ── Pre-filtro por título/URL ──────────────────────
                     if not job_filter.is_relevant(job_title, job_url):
                         print(f"   [SKIP] {job_title[:65]}")
                         session.register_skip()
                         session.mark_processed(job_url)
                         continue
 
-                    # ── Skip si ya fue procesada en sesión previa (resume) ──
+                    # ── Skip si ya fue procesada ───────────────────────
                     if session.is_already_processed(job_url):
                         print(f"   [DONE] Ya procesada: {job_title[:55]}")
                         continue
 
-                    # ── Navegar al detalle ───────────────────────────────
+                    # ── Parsear detalle ────────────────────────────────
                     try:
-                        detail_html = fetch_page(page, job_url)
+                        offer = parser.fetch_and_parse_job(page, job_url)
 
-                        offer = parser.parse_job_detail(detail_html, job_url)
-
-                        # Reintento si faltan datos críticos (renderizado lento)
-                        if not offer.job_title or not offer.full_description:
+                        # Reintento con espera extra (solo Computrabajo/HTML)
+                        if needs_browser and (
+                            not offer.job_title or not offer.full_description
+                        ):
                             try:
-                                page.wait_for_selector(
-                                    parser.SELECTORS["job_title"], timeout=3000
-                                )
-                                page.wait_for_selector(
-                                    parser.SELECTORS["description"], timeout=3000
-                                )
+                                page.wait_for_selector("h1", timeout=3000)
                                 detail_html = page.content()
-                                offer = parser.parse_job_detail(detail_html, job_url)
+                                offer = parser.parse_job_detail(  # type: ignore[attr-defined]
+                                    detail_html, job_url
+                                )
                             except Exception:
                                 pass
 
                         offer = cleaner.clean(offer)
 
-                        # ── Capa 2: Post-filtro (skills + desc mínima) ───
+                        # ── Post-filtro ────────────────────────────────
                         if not job_filter.is_valid_it_job(offer):
                             print(
                                 f"   [FILTERED] {offer.job_title[:55]} "
@@ -261,7 +306,7 @@ def run(
                             session.mark_processed(job_url)
                             continue
 
-                        session.add_offer(offer)  # Auto-flush cada FLUSH_EVERY
+                        session.add_offer(offer)
                         print(
                             f"   [{session.count}/{target_jobs}] "
                             f"[OK] {offer.job_title[:60]}"
@@ -271,23 +316,29 @@ def run(
                         print(f"   [ERROR] Error en {job_url}: {e}")
                         session.register_error()
 
-                    # Delay anti-ban — simula comportamiento humano
-                    time.sleep(random.uniform(2.5, 5.0))
+                    # Delay: Computrabajo requiere más espera que GOB API
+                    if needs_browser:
+                        time.sleep(random.uniform(2.5, 5.0))
+                    else:
+                        time.sleep(random.uniform(0.5, 1.5))
 
                 session.current_page += 1
 
     finally:
-        # Siempre se ejecuta: guarda lo que haya aunque se haya interrumpido
         session.save_final(exporter=exporter)
+
 
 
 if __name__ == "__main__":
     args = parse_args()
     headless = DEFAULT_HEADLESS and not args.no_headless
+    base_url = args.url or SITE_DEFAULTS.get(args.site, SITE_DEFAULTS["computrabajo"])
     run(
         target_jobs=args.jobs,
-        base_url=args.url,
+        base_url=base_url,
         headless=headless,
         no_supabase=args.no_supabase,
         output_file=args.output,
+        site=args.site,
+        categories=args.categories,
     )

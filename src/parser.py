@@ -1,8 +1,13 @@
 """
-Extracción estructurada de ofertas laborales desde HTML.
+Extracción estructurada de ofertas laborales desde Computrabajo.
 
-Contiene el schema de datos (JobOffer) y la lógica de parseo (JobParser)
-para páginas de listado y detalle de Computrabajo.
+Contiene:
+    - JobOffer : Dataclass con el schema de datos compartido por todos los parsers.
+    - ComputrabajoParser : Implementación de BaseParser para pe.computrabajo.com
+      mediante Playwright (renderizado JS) + BeautifulSoup (parseo HTML).
+
+Nota: `JobParser` es un alias de compatibilidad hacia atrás. Usar `ComputrabajoParser`
+      en código nuevo.
 """
 
 import json
@@ -11,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
+
+from src.base_parser import BaseParser
 
 
 @dataclass
@@ -37,14 +44,24 @@ class JobOffer:
     )
 
 
-class JobParser:
+class ComputrabajoParser(BaseParser):
     """
-    Parsea HTML de Computrabajo para extraer datos estructurados.
+    Parser para pe.computrabajo.com usando Playwright + BeautifulSoup.
 
-    Dos métodos principales:
-    - parse_listing_page: extrae URLs de vacantes desde la página de listado
-    - parse_job_detail: parsea el detalle completo de una vacante individual
+    Implementa la interfaz BaseParser. Usa un browser headless (Playwright)
+    para renderizar JS y BeautifulSoup para parsear el HTML resultante.
+
+    Métodos de la interfaz BaseParser:
+        - fetch_job_listings  : carga la página de listado con Playwright
+        - fetch_and_parse_job : navega al detalle y lo parsea
+
+    Métodos internos (usables directamente en tests o debug):
+        - parse_listing_page  : parsea HTML de listado ya renderizado
+        - parse_job_detail    : parsea HTML de detalle ya renderizado
     """
+
+    SITE_NAME: str = "computrabajo"
+    DEFAULT_BASE_URL: str = "https://pe.computrabajo.com/trabajo-de-desarrollador"
 
     # Diccionarios de referencia para clasificación semi-automática
     HARD_SKILLS_KEYWORDS = [
@@ -77,6 +94,49 @@ class JobParser:
         "company_location": "div.mt5, h1 + div, h1 + p",
         "description": 'div[div-link="oferta"], section.box_border',
     }
+
+    # ------------------------------------------------------------------
+    # Interfaz BaseParser
+    # ------------------------------------------------------------------
+
+    def fetch_job_listings(self, page, current_page: int) -> list[tuple[str, str]]:
+        """
+        Carga la página de listado con Playwright y extrae (url, título).
+
+        Args:
+            page:         Playwright Page activo.
+            current_page: Número de página (1-indexed).
+
+        Returns:
+            Lista de tuplas (url, titulo). Vacía si no hay más resultados.
+        """
+        import time
+        url = f"{self.DEFAULT_BASE_URL}?p={current_page}"
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        time.sleep(1)
+        html = page.content()
+        return self.parse_listing_page(html)
+
+    def fetch_and_parse_job(self, page, url: str) -> JobOffer:
+        """
+        Navega al detalle con Playwright y retorna un JobOffer poblado.
+
+        Args:
+            page: Playwright Page activo.
+            url:  URL pública de la oferta en Computrabajo.
+
+        Returns:
+            JobOffer con todos los campos disponibles poblados.
+        """
+        import time
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        time.sleep(1)
+        html = page.content()
+        return self.parse_job_detail(html, url)
+
+    # ------------------------------------------------------------------
+    # Métodos internos de parseo (también usables en tests)
+    # ------------------------------------------------------------------
 
     def parse_listing_page(self, html: str) -> list[tuple[str, str]]:
         """
@@ -374,3 +434,9 @@ class JobParser:
                 break
 
         return offer
+
+
+# Alias de compatibilidad hacia atrás.
+# Los imports existentes (`from src.parser import JobParser`) seguirán funcionando.
+# En código nuevo, usar ComputrabajoParser directamente.
+JobParser = ComputrabajoParser

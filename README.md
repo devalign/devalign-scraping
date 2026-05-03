@@ -10,13 +10,20 @@
 
 ## 📋 Descripción
 
-Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright y BeautifulSoup. 
+Este proyecto extrae datos estructurados de ofertas laborales desde múltiples portales de empleo usando el **Patrón Strategy** para mantener el código modular y escalable.
+
+**Portales soportados:**
+| Portal | Estrategia | Auth |
+|---|---|---|
+| **Computrabajo.com.pe** | Playwright + BeautifulSoup (HTML rendering) | No |
+| **GetOnBoard.com** | API REST pública (`/api/v0/`) + requests | No |
 
 **Características principales:**
+- **Patrón Strategy:** Cada portal tiene su propio parser (`ComputrabajoParser`, `GetOnBoardParser`) con una interfaz común (`BaseParser`). Añadir un nuevo portal es simplemente crear un nuevo archivo en `src/`.
 - **Resiliencia:** Sistema de checkpoints cada 20 ofertas. Si el proceso se interrumpe, no se pierden los datos.
 - **Auto-Resume:** Detecta automáticamente sesiones interrumpidas y ofrece continuar desde donde se dejó.
-- **Filtro IT Inteligente:** Pre-filtrado por título/URL antes de navegar, ahorrando ~40% del tiempo de scraping al ignorar puestos no relacionados.
-- **Exportación Robusta:** Upsert automático a **Supabase**, evitando duplicados y manteniendo la integridad de los datos para modelos de ML.
+- **Filtro IT Inteligente:** Pre-filtrado por título antes de fetchear detalles, ahorrando tiempo y requests.
+- **Exportación Robusta:** Upsert automático a **Supabase**, evitando duplicados.
 
 ### Variables Extraídas
 
@@ -69,15 +76,36 @@ cp .env.example .env
 ## ⚡ Uso
 
 ```bash
-# Ejecución por defecto (Detección de checkpoints automática)
+# Computrabajo — ejecución por defecto
 python scripts/run_scraper.py --jobs 300
+
+# GetOnBoard — con categorías por defecto (programming, mobile, sysadmin)
+python scripts/run_scraper.py --site getonboard --jobs 100
+
+# GetOnBoard — con categorías específicas
+python scripts/run_scraper.py --site getonboard --categories programming mobile-developer --jobs 50
 
 # Prueba local (Exporta a JSON sin tocar Supabase)
 python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
+python scripts/run_scraper.py --site getonboard --jobs 5 --no-supabase --output data/gob_test.json
 
-# Modo visible (debug)
+# Modo visible (debug, solo Computrabajo)
 python scripts/run_scraper.py --jobs 10 --no-headless
 ```
+
+### Argumentos CLI
+
+| Argumento | Default | Descripción |
+|---|---|---|
+| `--site` | `computrabajo` | Portal: `computrabajo` \| `getonboard` |
+| `--jobs` | `100` | Número de ofertas IT válidas a recolectar |
+| `--categories` | *(ver abajo)* | [GOB] Categorías a scrapear (espacio-separadas) |
+| `--url` | *(por portal)* | Override manual de URL base |
+| `--no-headless` | `False` | Browser visible (solo Computrabajo) |
+| `--no-supabase` | `False` | Solo guardar localmente |
+| `--output` | `data/test_run.json` | Ruta del archivo de salida local |
+
+**Categorías GetOnBoard por defecto:** `programming`, `mobile-developer`, `sysadmin-devops-qa`
 
 > [!TIP]
 > Si el scraper se detiene con **Ctrl+C**, se guardará el progreso actual. Al reiniciarlo, el script te preguntará si deseas retomar la sesión anterior.
@@ -110,17 +138,21 @@ devalign-scraping/
 │   ├── checkpoints/             # Sesiones interrumpidas (auto-limpieza)
 │   └── test_run.json            # Resultados locales
 ├── src/
+│   ├── base_parser.py           # 🔑 Interfaz Strategy (BaseParser ABC)
+│   ├── parser.py                # ComputrabajoParser + JobOffer dataclass
+│   ├── getonboard_parser.py     # GetOnBoardParser (API REST, sin browser)
 │   ├── browser.py               # Ciclo de vida de Playwright
-│   ├── parser.py                # Extracción con BeautifulSoup y Regex
 │   ├── cleaner.py               # Pipeline de limpieza NLP
 │   ├── job_filter.py            # Pre/Post filtrado de calidad IT
 │   ├── session.py               # Orquestación de persistencia y checkpoints
 │   └── supabase_exporter.py     # Cliente Supabase (Upsert)
 ├── scripts/
-│   └── run_scraper.py           # Entry point con Graceful Shutdown
+│   └── run_scraper.py           # Entry point multi-portal con Graceful Shutdown
 ├── tests/
-│   ├── test_parser.py
-│   └── test_cleaner.py
+│   ├── test_parser.py           # Tests ComputrabajoParser
+│   ├── test_cleaner.py          # Tests TextCleaner
+│   └── test_getonboard_parser.py # Tests GetOnBoardParser (26 tests)
+├── ANTIGRAVITY.md            # Directivas para agentes de IA
 ├── .env.example
 ├── requirements.txt
 └── requirements-dev.txt
@@ -134,7 +166,9 @@ Antes de ejecutar el scraper, revisa:
 - El archivo `robots.txt` del portal target
 - Los Términos de Servicio del sitio
 
-El script incluye delays aleatorios (2.5–5s) entre requests para simular comportamiento humano y respetar la infraestructura del portal.
+El script incluye delays aleatorios entre requests para respetar la infraestructura del portal:
+- **Computrabajo:** 2.5–5s (browser headless, más agresivo)
+- **GetOnBoard:** 0.5–1.5s (API pública, más liviano)
 
 ---
 
