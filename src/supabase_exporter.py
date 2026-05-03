@@ -32,9 +32,32 @@ class SupabaseExporter:
         self.supabase: Client = create_client(url, key)
         self.table_name = "job_offers"
 
+    def _is_valid_it_job(self, o) -> bool:
+        """
+        Valida si la oferta es realmente de IT y tiene datos suficientes.
+        """
+        # 1. Filtro por palabras prohibidas en el título (evita vendedores, CNC, etc.)
+        blacklist = [
+            'vendedor', 'ventas', 'cnc', 'matricero', 'comercial', 
+            'maquinaria', 'industrial', 'campo', 'consumo'
+        ]
+        title_lower = o.job_title.lower()
+        if any(word in title_lower for word in blacklist):
+            return False
+
+        # 2. Filtro: Debe tener al menos una habilidad técnica (lo que pidió el partner)
+        if not o.hard_skills:
+            return False
+
+        # 3. Filtro: Descripción mínima (subimos a 150 chars para calidad)
+        if len(o.full_description) < 150:
+            return False
+
+        return True
+
     def save(self, offers: list) -> None:
         """
-        Sube la lista de ofertas a Supabase.
+        Sube la lista de ofertas a Supabase tras un filtrado estricto.
 
         Args:
             offers: Lista de JobOffer dataclass instances.
@@ -43,20 +66,15 @@ class SupabaseExporter:
             print("[WARN] No hay ofertas para subir a Supabase.")
             return
 
-        # Convertir dataclasses a dicts y filtrar por calidad
+        # Convertir dataclasses a dicts y filtrar por calidad estricta
         valid_records = []
         for o in offers:
-            # Filtro: Descripción mínima (100 chars)
-            if len(o.full_description) < 100:
-                continue
-
-            record = asdict(o)
-            # Asegurarse de que scraped_at sea compatible con ISO si es necesario,
-            # pero el scraper ya lo genera así.
-            valid_records.append(record)
+            if self._is_valid_it_job(o):
+                record = asdict(o)
+                valid_records.append(record)
 
         if not valid_records:
-            print("[WARN] No hay ofertas válidas tras el filtrado.")
+            print("[WARN] No hay ofertas válidas tras el filtrado estricto.")
             return
 
         print(f"[*] Subiendo {len(valid_records)} ofertas a Supabase...")

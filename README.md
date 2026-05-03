@@ -10,21 +10,24 @@
 
 ## 📋 Descripción
 
-Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright (para renderizado JS) y BeautifulSoup (para parseo HTML). Los datos se limpian y exportan en formato CSV, listos para ser consumidos por modelos de IA y Sentence Transformers.
+Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright (para renderizado JS) y BeautifulSoup (para parseo HTML). Los datos se limpian rigurosamente y se exportan automáticamente a **Supabase**, listos para ser consumidos por modelos de IA y Sentence Transformers (Algoritmo K-Prototypes).
 
 ### Variables Extraídas
 
 | Campo | Descripción |
 |-------|-------------|
 | `job_title` | Título del puesto |
-| `company` | Empresa |
-| `location` | Ubicación |
-| `hard_skills` | Competencias técnicas (delimitadas por `\|`) |
-| `soft_skills` | Habilidades blandas (delimitadas por `\|`) |
+| `company` | Empresa contratante |
+| `location` | Ubicación geográfica |
+| `salary` | Salario (limpio de metadatos irrelevantes) |
+| `modality` | Modalidad de trabajo (Remoto, Presencial, Híbrido) |
+| `date_posted` | Fecha de publicación |
+| `hard_skills` | Competencias técnicas extraídas vía NLP (Formato `TEXT[]`) |
+| `soft_skills` | Habilidades blandas extraídas (Formato `TEXT[]`) |
 | `experience_years` | Años de experiencia requeridos |
 | `education_level` | Nivel formativo mínimo |
-| `full_description` | Descripción íntegra de la vacante |
-| `source_url` | URL de origen |
+| `full_description` | Descripción íntegra de la vacante (Limpiada de ruido UI) |
+| `source_url` | URL de origen (Clave Única) |
 | `scraped_at` | Timestamp ISO de extracción |
 
 ---
@@ -35,6 +38,7 @@ Este proyecto extrae datos estructurados de ofertas laborales desde **Computraba
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (gestor de paquetes recomendado)
+- Cuenta en [Supabase](https://supabase.com)
 
 ### Instalación
 
@@ -50,7 +54,7 @@ uv pip install -r requirements.txt
 # Instalar el browser de Playwright
 playwright install chromium
 
-# Configurar variables de entorno
+# Configurar variables de entorno (Añadir SUPABASE_URL y SUPABASE_KEY)
 cp .env.example .env
 ```
 
@@ -59,11 +63,11 @@ cp .env.example .env
 ## ⚡ Uso
 
 ```bash
-# Ejecución por defecto (100 ofertas)
-python scripts/run_scraper.py
+# Ejecución por defecto (Sube a Supabase automáticamente)
+python scripts/run_scraper.py --jobs 100
 
-# Personalizar cantidad y salida
-python scripts/run_scraper.py --jobs 50 --output data/processed/custom.csv
+# Prueba local (Exporta a JSON sin tocar Supabase)
+python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
 
 # Modo visible (debug)
 python scripts/run_scraper.py --jobs 10 --no-headless
@@ -95,13 +99,12 @@ black src/ scripts/ tests/
 devalign-scraping/
 ├── .github/workflows/lint.yml   # CI: flake8 en cada push
 ├── data/
-│   ├── raw/                     # CSVs sin procesar (gitignored)
-│   └── processed/               # CSVs limpios listos para ML
+│   └── test_run.json            # Pruebas locales de validación
 ├── src/
 │   ├── browser.py               # Configuración de Playwright
-│   ├── parser.py                # Extracción con BeautifulSoup
-│   ├── cleaner.py               # Pipeline de limpieza de texto
-│   └── exporter.py              # Escritura del CSV con pandas
+│   ├── parser.py                # Extracción robusta con BeautifulSoup y Regex
+│   ├── cleaner.py               # Pipeline de limpieza de texto para NLP
+│   └── supabase_exporter.py     # Cliente de Supabase con UPSERT y filtrado
 ├── scripts/
 │   └── run_scraper.py           # Entry point principal
 ├── tests/

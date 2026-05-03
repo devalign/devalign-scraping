@@ -78,10 +78,21 @@ def parse_args():
         action="store_true",
         help="Ejecutar browser en modo visible (para debug)",
     )
+    parser.add_argument(
+        "--no-supabase",
+        action="store_true",
+        help="No subir datos a Supabase (solo guardar localmente)",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="data/test_run.json",
+        help="Ruta para guardar el archivo local de resultados (default: data/test_run.json)",
+    )
     return parser.parse_args()
 
 
-def run(target_jobs: int, base_url: str, headless: bool):
+def run(target_jobs: int, base_url: str, headless: bool, no_supabase: bool, output_file: str):
     """
     Ejecuta el pipeline completo de scraping.
 
@@ -92,7 +103,7 @@ def run(target_jobs: int, base_url: str, headless: bool):
     """
     parser = JobParser()
     cleaner = TextCleaner()
-    exporter = SupabaseExporter()
+    exporter = None if no_supabase else SupabaseExporter()
     collected = []
     errors = 0
 
@@ -100,6 +111,7 @@ def run(target_jobs: int, base_url: str, headless: bool):
     print(f"   Target: {base_url}")
     print(f"   Jobs: {target_jobs}")
     print(f"   Headless: {headless}")
+    print(f"   No Supabase: {no_supabase}")
     print(f"{'-' * 50}")
 
     with BrowserManager(headless=headless) as context:
@@ -186,7 +198,21 @@ def run(target_jobs: int, base_url: str, headless: bool):
     print(f"   Errores: {errors}")
 
     if collected:
-        exporter.save(collected)
+        if not no_supabase and exporter:
+            exporter.save(collected)
+        
+        # Siempre guardamos una copia local para validación cuando estamos en modo prueba
+        import json
+        from dataclasses import asdict
+        
+        # Asegurar que el directorio existe
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump([asdict(o) for o in collected], f, ensure_ascii=False, indent=2)
+        
+        print(f"\n[OK] Datos guardados localmente en: {output_file}")
+        print(f"[*] Puedes revisar los nuevos campos (salario, modalidad, etc.) en ese archivo.")
     else:
         print("\n[!] No se recolectaron ofertas.")
 
@@ -198,4 +224,6 @@ if __name__ == "__main__":
         target_jobs=args.jobs,
         base_url=args.url,
         headless=headless,
+        no_supabase=args.no_supabase,
+        output_file=args.output
     )

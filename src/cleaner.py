@@ -76,14 +76,14 @@ class TextCleaner:
 
         return text
 
-    def normalize_skills_list(self, skills: list) -> str:
+    def clean_skills_list(self, skills: list) -> list:
         """
-        Convierte lista de skills a string delimitado por '|'.
-
-        Formato elegido porque las comas rompen el CSV y '|' es
-        estándar en datasets de NLP para listas dentro de celdas.
+        Limpia y normaliza la lista de habilidades, eliminando duplicados
+        y retornando una lista de Python limpia (que se mapea a ARRAY en Postgres).
         """
-        return " | ".join(sorted(set(s.lower().strip() for s in skills if s.strip())))
+        if not skills:
+            return []
+        return sorted(list(set(s.lower().strip() for s in skills if s.strip())))
 
     def clean_text_field(self, text: str) -> str:
         """Aplica el pipeline completo sobre un campo de texto libre."""
@@ -110,8 +110,8 @@ class TextCleaner:
             company=self.clean_text_field(offer.company),
             location=self.clean_text_field(offer.location),
             full_description=self.clean_text_field(offer.full_description),
-            hard_skills=self.normalize_skills_list(offer.hard_skills),
-            soft_skills=self.normalize_skills_list(offer.soft_skills),
+            hard_skills=self.clean_skills_list(offer.hard_skills),
+            soft_skills=self.clean_skills_list(offer.soft_skills),
             experience_years=offer.experience_years.strip().lower(),
             education_level=offer.education_level.strip().lower(),
         )
