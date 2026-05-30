@@ -39,6 +39,7 @@ class SupabaseExporter:
         Sube una lista de JobOffer (dataclasses) a Supabase.
 
         Las ofertas ya vienen validadas por JobFilter — no se filtra aquí.
+        Aplica _map_to_db() para renombrar campos del dataclass a columnas de la DB.
 
         Args:
             offers: Lista de instancias de JobOffer.
@@ -47,8 +48,29 @@ class SupabaseExporter:
             print("[WARN] No hay ofertas para subir a Supabase.")
             return
 
-        records = [asdict(o) for o in offers]
+        records = [self._map_to_db(asdict(o)) for o in offers]
         self._upsert(records)
+
+    def _map_to_db(self, record: dict) -> dict:
+        """
+        Traduce los campos del dataclass JobOffer a columnas de la tabla job_offers.
+
+        Cambios aplicados:
+            - hard_skills  → raw_hard_skills  (JSONB staging en la DB)
+            - soft_skills  → raw_soft_skills  (JSONB staging en la DB)
+
+        El motor ML de devalign-api normaliza estos arrays posteriormente
+        y puebla la tabla transaccional offer_skills.
+
+        Args:
+            record: Dict generado por dataclasses.asdict(offer).
+
+        Returns:
+            Dict con las keys alineadas a las columnas de job_offers.
+        """
+        record["raw_hard_skills"] = record.pop("hard_skills", [])
+        record["raw_soft_skills"] = record.pop("soft_skills", [])
+        return record
 
     def save_dicts(self, records: list[dict]) -> None:
         """
