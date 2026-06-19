@@ -26,10 +26,29 @@ LISTING_HTML = """
 DETAIL_HTML = """
 <html>
 <body>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org/",
+      "@type": "JobPosting",
+      "title": "Desarrollador Full Stack Python",
+      "hiringOrganization": {
+        "@type": "Organization",
+        "name": "TechCorp SAC"
+      },
+      "jobLocation": {
+        "@type": "Place",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Lima",
+          "addressRegion": "Perú"
+        }
+      }
+    }
+    </script>
     <h1 class="fs24">Desarrollador Full Stack Python</h1>
-    <p class="fs16"><a class="js-o-link">TechCorp SAC</a></p>
+    <p class="fs16"><a class="js-o-link" href="/empresas/techcorp">TechCorp SAC</a></p>
     <p class="fs16">Lima, Perú</p>
-    <div class="mb40 pb40 bb1">
+    <div div-link="oferta" class="mb40 pb40 bb1">
         Buscamos desarrollador con experiencia en Python, Django y React.
         Requisitos:
         - 3 años de experiencia en desarrollo web
@@ -60,22 +79,22 @@ class TestParseListingPage:
     """Tests para la extracción de URLs desde el listado."""
 
     def test_extracts_valid_urls(self, parser):
-        urls = parser.parse_listing_page(LISTING_HTML)
-        assert len(urls) == 2
-        assert all(url.startswith("https://www.computrabajo.com.pe") for url in urls)
+        entries = parser.parse_listing_page(LISTING_HTML)
+        assert len(entries) == 2
+        assert all(url.startswith("https://pe.computrabajo.com") for url, _ in entries)
 
     def test_ignores_empty_hrefs(self, parser):
-        urls = parser.parse_listing_page(LISTING_HTML)
+        entries = parser.parse_listing_page(LISTING_HTML)
         # Solo 2 URLs válidas (la tercera tiene href vacío)
-        assert len(urls) == 2
+        assert len(entries) == 2
 
     def test_ignores_non_matching_selectors(self, parser):
-        urls = parser.parse_listing_page(LISTING_HTML)
-        assert not any("not-a-job" in url for url in urls)
+        entries = parser.parse_listing_page(LISTING_HTML)
+        assert not any("not-a-job" in url for url, _ in entries)
 
     def test_returns_empty_on_no_results(self, parser):
-        urls = parser.parse_listing_page("<html><body></body></html>")
-        assert urls == []
+        entries = parser.parse_listing_page("<html><body></body></html>")
+        assert entries == []
 
 
 class TestParseJobDetail:

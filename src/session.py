@@ -127,6 +127,12 @@ class SessionManager:
         """Marca una URL como procesada (se llama incluso en ofertas descartadas)."""
         self._processed_urls.add(url.split("#")[0])
 
+    def preseed_processed_urls(self, urls: set[str]) -> None:
+        """Pre-siembra el conjunto de URLs procesadas con URLs del historial."""
+        cleaned_urls = {u.split("#")[0] for u in urls}
+        self._processed_urls.update(cleaned_urls)
+        print(f"[*] Pre-sembradas {len(cleaned_urls)} URLs en la sesión de scraping.")
+
     # ------------------------------------------------------------------
     # Acumulación de ofertas
     # ------------------------------------------------------------------
@@ -237,7 +243,7 @@ class SessionManager:
         self._skipped = meta.get("skipped", 0)
         self._filtered = meta.get("filtered", 0)
         self._started_at = meta.get("started_at", self._started_at)
-        self._processed_urls = set(data.get("processed_urls", []))
+        self._processed_urls.update(data.get("processed_urls", []))
 
         # Reconstruir ofertas como dicts (se usarán directamente en save_final)
         self._collected = data.get("offers", [])

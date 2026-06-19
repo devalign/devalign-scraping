@@ -80,33 +80,33 @@ class TestRemoveNoisePatterns:
         assert "Programación" in result
 
 
-class TestNormalizeSkillsList:
-    """Tests para normalización de listas de skills."""
+class TestCleanSkillsList:
+    """Tests para limpieza de listas de skills."""
 
-    def test_joins_with_pipe(self, cleaner):
+    def test_returns_list(self, cleaner):
         skills = ["Python", "React", "Docker"]
-        result = cleaner.normalize_skills_list(skills)
-        assert "|" in result
+        result = cleaner.clean_skills_list(skills)
+        assert isinstance(result, list)
         assert "python" in result  # Lowercase
 
     def test_deduplicates(self, cleaner):
         skills = ["Python", "python", "PYTHON"]
-        result = cleaner.normalize_skills_list(skills)
-        assert result.count("python") == 1
+        result = cleaner.clean_skills_list(skills)
+        assert len(result) == 1
+        assert result == ["python"]
 
     def test_sorts_alphabetically(self, cleaner):
         skills = ["React", "Angular", "Docker"]
-        result = cleaner.normalize_skills_list(skills)
-        parts = [s.strip() for s in result.split("|")]
-        assert parts == sorted(parts)
+        result = cleaner.clean_skills_list(skills)
+        assert result == ["angular", "docker", "react"]
 
     def test_handles_empty_list(self, cleaner):
-        assert cleaner.normalize_skills_list([]) == ""
+        assert cleaner.clean_skills_list([]) == []
 
     def test_filters_empty_strings(self, cleaner):
         skills = ["Python", "", "React"]
-        result = cleaner.normalize_skills_list(skills)
-        assert result.count("|") == 1  # Solo 2 items válidos
+        result = cleaner.clean_skills_list(skills)
+        assert result == ["python", "react"]
 
 
 class TestCleanTextField:
@@ -150,6 +150,7 @@ class TestCleanJobOffer:
         assert "<br/>" not in cleaned.job_title
         assert "  " not in cleaned.company
         assert "<b>" not in cleaned.full_description
-        assert "|" in cleaned.hard_skills  # Ahora es string con pipe
+        assert "python" in cleaned.hard_skills
+        assert "react" in cleaned.hard_skills
         assert cleaned.experience_years == "3 años"
         assert cleaned.education_level == "universitaria"

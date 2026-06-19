@@ -10,6 +10,7 @@ ANTES de llegar aquí, en JobFilter. Este módulo solo recibe ofertas ya validad
 
 import os
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 
 from supabase import create_client, Client
 
@@ -33,6 +34,29 @@ class SupabaseExporter:
 
         self.supabase: Client = create_client(url, key)
         self.table_name = "job_offers"
+
+    def get_existing_urls(self, days_limit: int = 30) -> set[str]:
+        """
+        Consulta las URLs de ofertas ya guardadas en Supabase en los últimos N días.
+
+        Retorna:
+            Conjunto de URLs existentes.
+        """
+        print(f"[*] Consultando URLs existentes en Supabase (últimos {days_limit} días)...")
+        try:
+            since_date = (datetime.now(timezone.utc) - timedelta(days=days_limit)).isoformat()
+            response = (
+                self.supabase.table(self.table_name)
+                .select("source_url")
+                .gte("scraped_at", since_date)
+                .execute()
+            )
+            urls = {row["source_url"] for row in response.data if "source_url" in row}
+            print(f"[OK] Se obtuvieron {len(urls)} URLs existentes desde Supabase.")
+            return urls
+        except Exception as e:
+            print(f"[ERROR] Error al consultar URLs existentes de Supabase: {e}")
+            return set()
 
     def save(self, offers: list) -> None:
         """
@@ -83,7 +107,16 @@ class SupabaseExporter:
             print("[WARN] No hay registros para subir a Supabase.")
             return
 
-        self._upsert(records)
+        mapped_records = []
+        for r in records:
+            r_copy = dict(r)
+            if "hard_skills" in r_copy:
+                r_copy["raw_hard_skills"] = r_copy.pop("hard_skills", [])
+            if "soft_skills" in r_copy:
+                r_copy["raw_soft_skills"] = r_copy.pop("soft_skills", [])
+            mapped_records.append(r_copy)
+
+        self._upsert(mapped_records)
 
     def _upsert(self, records: list[dict]) -> None:
         """

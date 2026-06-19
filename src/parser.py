@@ -96,6 +96,14 @@ class ComputrabajoParser(BaseParser):
         "description": 'div[div-link="oferta"], section.box_border',
     }
 
+    def __init__(self, keyword: str = "desarrollador"):
+        """
+        Inicializa el parser con una palabra clave de búsqueda específica.
+        Normaliza espacios a guiones para la URL.
+        """
+        normalized = keyword.strip().lower().replace(" ", "-")
+        self.base_url = f"https://pe.computrabajo.com/trabajo-de-{normalized}"
+
     # ------------------------------------------------------------------
     # Interfaz BaseParser
     # ------------------------------------------------------------------
@@ -112,7 +120,7 @@ class ComputrabajoParser(BaseParser):
             Lista de tuplas (url, titulo). Vacía si no hay más resultados.
         """
         import time
-        url = f"{self.DEFAULT_BASE_URL}?p={current_page}"
+        url = f"{self.base_url}?p={current_page}"
         page.goto(url, wait_until="networkidle", timeout=30000)
         time.sleep(1)
         html = page.content()

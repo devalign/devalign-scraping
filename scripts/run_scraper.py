@@ -110,6 +110,16 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--keywords",
+        nargs="+",
+        default=None,
+        metavar="KEYWORD",
+        help=(
+            "[Solo Computrabajo] Palabras clave a buscar. "
+            "Ej: --keywords python react 'node js'"
+        ),
+    )
+    parser.add_argument(
         "--no-headless",
         action="store_true",
         help="Ejecutar browser en modo visible (para debug; solo aplica a Computrabajo)",
@@ -120,6 +130,12 @@ def parse_args():
         help="No subir datos a Supabase (solo guardar localmente)",
     )
     parser.add_argument(
+        "--max-duplicates",
+        type=int,
+        default=10,
+        help="Límite de duplicados consecutivos antes de detener el scraping (parada temprana; default: 10)",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="data/test_run.json",
@@ -128,20 +144,27 @@ def parse_args():
     return parser.parse_args()
 
 
-def _build_parser(site: str, categories: list[str] | None):
+def _build_parser(site: str, term: str, base_url_override: str | None = None):
     """
-    Factory: instancia el parser correcto según el portal seleccionado.
+    Factory: instancia el parser correcto según el portal y término.
 
     Args:
-        site:       Identificador del portal ("computrabajo" | "getonboard").
-        categories: Lista de categorías (solo relevante para GetOnBoard).
+        site:              Identificador del portal ("computrabajo" | "getonboard").
+        term:              Término de búsqueda (keyword o categoría).
+        base_url_override: URL de override manual.
 
     Returns:
         Instancia de BaseParser lista para usar.
     """
     if site == "getonboard":
-        return GetOnBoardParser(categories=categories)
-    return ComputrabajoParser()
+        return GetOnBoardParser(categories=[term])
+    
+    if term == "custom-url" and base_url_override:
+        parser = ComputrabajoParser()
+        parser.base_url = base_url_override
+        return parser
+        
+    return ComputrabajoParser(keyword=term)
 
 
 def _prompt_resume() -> bool:
@@ -183,6 +206,8 @@ def run(
     output_file: str,
     site: str = "computrabajo",
     categories: list[str] | None = None,
+    keywords: list[str] | None = None,
+    max_duplicates: int = 10,
 ):
     """
     Ejecuta el pipeline completo de scraping con resiliencia.
@@ -195,11 +220,23 @@ def run(
         output_file: Ruta del archivo JSON local de salida.
         site:        Portal a scrapear ("computrabajo" | "getonboard").
         categories:  Categorías GetOnBoard (None usa el default del parser).
+        keywords:    Palabras clave Computrabajo (None usa el default del parser).
+        max_duplicates: Límite de duplicados consecutivos antes de detener (parada temprana).
     """
-    parser = _build_parser(site, categories)
     cleaner = TextCleaner()
     job_filter = JobFilter()
     exporter = None if no_supabase else SupabaseExporter()
+
+    # ── Determinar los términos a buscar ──────────────────────────────
+    is_url_override = (base_url != SITE_DEFAULTS.get(site, ""))
+    
+    if site == "getonboard":
+        terms = categories or ["programming", "mobile-developer", "sysadmin-devops-qa"]
+    else:
+        if is_url_override:
+            terms = ["custom-url"]
+        else:
+            terms = keywords or ["desarrollador"]
 
     # ── Inicializar sesión ─────────────────────────────────────────────
     session = SessionManager(
@@ -208,6 +245,11 @@ def run(
         base_url=base_url,
         flush_every=FLUSH_EVERY,
     )
+
+    # ── Pre-sembrar URLs desde Supabase ───────────────────────────────
+    if not no_supabase and exporter:
+        existing_urls = exporter.get_existing_urls()
+        session.preseed_processed_urls(existing_urls)
 
     # ── Detección automática de sesión previa ──────────────────────────
     if _prompt_resume():
@@ -220,7 +262,7 @@ def run(
 
     print("\n[*] DevAlign Scraper")
     print(f"   Portal:      {site.capitalize()}")
-    print(f"   Target URL:  {base_url}")
+    print(f"   Términos:    {terms}")
     print(f"   Meta IT:     {target_jobs} ofertas válidas")
     print(f"   Ya cargadas: {session.count}")
     print(f"   Headless:    {headless}")
@@ -236,98 +278,124 @@ def run(
         with BrowserManager(headless=headless) as context:
             page = context.new_page() if needs_browser else None
 
-            while not session.should_stop and session.count < target_jobs:
-                print(f"\n[Page {session.current_page}]")
-
-                # ── Obtener listado ────────────────────────────────────
-                try:
-                    job_entries = parser.fetch_job_listings(
-                        page, session.current_page
-                    )
-                except Exception as e:
-                    print(f"   [ERROR] Error al cargar listado: {e}")
-                    session.register_error()
-                    if session.errors > 5:
-                        print("   [ABORT] Demasiados errores consecutivos.")
-                        break
-                    session.current_page += 1
-                    continue
-
-                if not job_entries:
-                    print(
-                        f"   [WARN] Sin más resultados en página {session.current_page}."
-                    )
+            for term in terms:
+                if session.should_stop or session.count >= target_jobs:
                     break
 
-                print(f"   [#] {len(job_entries)} vacantes encontradas")
+                print(f"\n{'='*60}")
+                print(f"[*] Iniciando búsqueda de término: '{term}'")
+                print(f"{'='*60}")
 
-                for job_url, job_title in job_entries:
-                    if session.should_stop or session.count >= target_jobs:
+                parser = _build_parser(site, term, base_url_override=base_url if is_url_override else None)
+                session.current_page = 1
+                consecutive_duplicates = 0
+                term_errors = 0
+
+                while not session.should_stop and session.count < target_jobs:
+                    print(f"\n[Page {session.current_page}]")
+
+                    # ── Obtener listado ────────────────────────────────────
+                    try:
+                        job_entries = parser.fetch_job_listings(
+                            page, session.current_page
+                        )
+                    except Exception as e:
+                        print(f"   [ERROR] Error al cargar listado: {e}")
+                        term_errors += 1
+                        if term_errors > 5:
+                            print(f"   [WARN] Demasiados errores consecutivos para el término '{term}'. Pasando al siguiente...")
+                            break
+                        session.current_page += 1
+                        continue
+
+                    if not job_entries:
+                        print(
+                            f"   [WARN] Sin más resultados para '{term}' en página {session.current_page}."
+                        )
                         break
 
-                    # ── Pre-filtro por título/URL ──────────────────────
-                    if not job_filter.is_relevant(job_title, job_url):
-                        print(f"   [SKIP] {job_title[:65]}")
-                        session.register_skip()
-                        session.mark_processed(job_url)
-                        continue
+                    print(f"   [#] {len(job_entries)} vacantes encontradas")
+                    term_early_stop = False
 
-                    # ── Skip si ya fue procesada ───────────────────────
-                    if session.is_already_processed(job_url):
-                        print(f"   [DONE] Ya procesada: {job_title[:55]}")
-                        continue
+                    for job_url, job_title in job_entries:
+                        if session.should_stop or session.count >= target_jobs:
+                            break
 
-                    # ── Parsear detalle ────────────────────────────────
-                    try:
-                        offer = parser.fetch_and_parse_job(page, job_url)
-
-                        # Reintento con espera extra (solo Computrabajo/HTML)
-                        if needs_browser and (
-                            not offer.job_title or not offer.full_description
-                        ):
-                            try:
-                                page.wait_for_selector("h1", timeout=3000)
-                                detail_html = page.content()
-                                offer = parser.parse_job_detail(  # type: ignore[attr-defined]
-                                    detail_html, job_url
+                        # ── Skip si ya fue procesada (Evita re-scraping / conteo de duplicados) ──
+                        if session.is_already_processed(job_url):
+                            print(f"   [DONE] Ya procesada: {job_title[:55]}")
+                            consecutive_duplicates += 1
+                            if consecutive_duplicates >= max_duplicates:
+                                print(
+                                    f"\n[!] Parada temprana para '{term}': Se alcanzó el límite de "
+                                    f"{max_duplicates} duplicados consecutivos."
                                 )
-                            except Exception:
-                                pass
+                                term_early_stop = True
+                                break
+                            continue
+                        else:
+                            consecutive_duplicates = 0
 
-                        offer = cleaner.clean(offer)
-
-                        # ── Post-filtro ────────────────────────────────
-                        if not job_filter.is_valid_it_job(offer):
-                            print(
-                                f"   [FILTERED] {offer.job_title[:55]} "
-                                f"(skills: {len(offer.hard_skills)}, "
-                                f"desc: {len(offer.full_description)}c)"
-                            )
-                            session.register_filtered()
+                        # ── Pre-filtro por título/URL ──────────────────────
+                        if not job_filter.is_relevant(job_title, job_url):
+                            print(f"   [SKIP] {job_title[:65]}")
+                            session.register_skip()
                             session.mark_processed(job_url)
                             continue
 
-                        session.add_offer(offer)
-                        print(
-                            f"   [{session.count}/{target_jobs}] "
-                            f"[OK] {offer.job_title[:60]}"
-                        )
+                        # ── Parsear detalle ────────────────────────────────
+                        try:
+                            offer = parser.fetch_and_parse_job(page, job_url)
 
-                    except Exception as e:
-                        print(f"   [ERROR] Error en {job_url}: {e}")
-                        session.register_error()
+                            # Reintento con espera extra (solo Computrabajo/HTML)
+                            if needs_browser and (
+                                not offer.job_title or not offer.full_description
+                            ):
+                                try:
+                                    page.wait_for_selector("h1", timeout=3000)
+                                    detail_html = page.content()
+                                    offer = parser.parse_job_detail(  # type: ignore[attr-defined]
+                                        detail_html, job_url
+                                    )
+                                except Exception:
+                                    pass
 
-                    # Delay: Computrabajo requiere más espera que GOB API
-                    if needs_browser:
-                        time.sleep(random.uniform(2.5, 5.0))
-                    else:
-                        time.sleep(random.uniform(0.5, 1.5))
+                            offer = cleaner.clean(offer)
 
-                session.current_page += 1
+                            # ── Post-filtro ────────────────────────────────
+                            if not job_filter.is_valid_it_job(offer):
+                                print(
+                                    f"   [FILTERED] {offer.job_title[:55]} "
+                                    f"(skills: {len(offer.hard_skills)}, "
+                                    f"desc: {len(offer.full_description)}c)"
+                                )
+                                session.register_filtered()
+                                session.mark_processed(job_url)
+                                continue
+
+                            session.add_offer(offer)
+                            print(
+                                f"   [{session.count}/{target_jobs}] "
+                                f"[OK] {offer.job_title[:60]}"
+                            )
+
+                        except Exception as e:
+                            print(f"   [ERROR] Error en {job_url}: {e}")
+                            session.register_error()
+
+                        # Delay: Computrabajo requiere más espera que GOB API
+                        if needs_browser:
+                            time.sleep(random.uniform(2.5, 5.0))
+                        else:
+                            time.sleep(random.uniform(0.5, 1.5))
+
+                    if term_early_stop:
+                        break
+
+                    session.current_page += 1
 
     finally:
         session.save_final(exporter=exporter)
-
 
 
 if __name__ == "__main__":
@@ -342,4 +410,6 @@ if __name__ == "__main__":
         output_file=args.output,
         site=args.site,
         categories=args.categories,
+        keywords=args.keywords,
+        max_duplicates=args.max_duplicates,
     )

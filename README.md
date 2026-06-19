@@ -20,6 +20,8 @@ Este proyecto extrae datos estructurados de ofertas laborales desde múltiples p
 
 **Características principales:**
 - **Patrón Strategy:** Cada portal tiene su propio parser (`ComputrabajoParser`, `GetOnBoardParser`) con una interfaz común (`BaseParser`). Añadir un nuevo portal es simplemente crear un nuevo archivo en `src/`.
+- **De-duplicación Inteligente:** Al iniciar, consulta y pre-siembra automáticamente las URLs recolectadas en Supabase durante los últimos 30 días para evitar re-scrapear la misma oferta.
+- **Parada Temprana por Término (Early Stopping):** Si detecta `max_duplicates` ofertas consecutivas repetidas en un término de búsqueda, detiene ese término y avanza al siguiente de la lista en lugar de abortar toda la sesión.
 - **Resiliencia:** Sistema de checkpoints cada 20 ofertas. Si el proceso se interrumpe, no se pierden los datos.
 - **Auto-Resume:** Detecta automáticamente sesiones interrumpidas y ofrece continuar desde donde se dejó.
 - **Filtro IT Inteligente:** Pre-filtrado por título antes de fetchear detalles, ahorrando tiempo y requests.
@@ -82,8 +84,14 @@ python scripts/run_scraper.py --jobs 300
 # Computrabajo — portal secundario (HTML, Playwright)
 python scripts/run_scraper.py --site computrabajo --jobs 100
 
+# Computrabajo — buscando múltiples palabras clave
+python scripts/run_scraper.py --site computrabajo --keywords python react "node js" --jobs 150
+
 # GetOnBoard — con categorías específicas
 python scripts/run_scraper.py --site getonboard --categories programming mobile-developer --jobs 50
+
+# Forzar parada temprana rápida (salta término tras 3 repetidos)
+python scripts/run_scraper.py --site computrabajo --keywords angular java --max-duplicates 3 --jobs 80
 
 # Prueba local (Exporta a JSON sin tocar Supabase)
 python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
@@ -100,6 +108,8 @@ python scripts/run_scraper.py --jobs 10 --no-headless
 | `--site` | `getonboard` | Portal: `getonboard` \| `computrabajo` |
 | `--jobs` | `100` | Número de ofertas IT válidas a recolectar |
 | `--categories` | *(ver abajo)* | [GOB] Categorías a scrapear (espacio-separadas) |
+| `--keywords` | `["desarrollador"]` | [Computrabajo] Palabras clave a buscar (espacio-separadas) |
+| `--max-duplicates` | `10` | Límite de duplicados consecutivos antes de saltar término |
 | `--url` | *(por portal)* | Override manual de URL base |
 | `--no-headless` | `False` | Browser visible (solo Computrabajo) |
 | `--no-supabase` | `False` | Solo guardar localmente |
