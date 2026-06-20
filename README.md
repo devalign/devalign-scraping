@@ -106,3 +106,6 @@ El diseño del pipeline de datos y su rol en la arquitectura general de Devalign
 - [🏗️ Arquitectura Técnica](../devalign-docs/ARCHITECTURE.md)
 - [🎯 Alcance MVP](../devalign-docs/SCOPE.md)
 - [🧠 Lógica Core e Inferencia](../devalign-docs/MODEL.md)
+- [📄 Documento de Requerimientos de Producto (PRD)](../devalign-docs/PRD.md)
+- [📋 Product Backlog](../devalign-docs/PRODUCT_BACKLOG.md)
+- [🏃 Sprint Backlog](../devalign-docs/SPRINT_BACKLOG.md)
