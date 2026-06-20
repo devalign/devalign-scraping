@@ -45,7 +45,11 @@ class BrowserManager:
         return self.context
 
     def __exit__(self, *args):
-        if self._browser:
-            self._browser.close()
-        if self._playwright:
-            self._playwright.stop()
+        try:
+            if self._browser:
+                self._browser.close()
+        except Exception:
+            pass  # Ignorar errores si la conexión ya se cerró (ej. por Ctrl+C)
+        finally:
+            if self._playwright:
+                self._playwright.stop()

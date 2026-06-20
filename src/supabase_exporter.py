@@ -3,10 +3,15 @@ Exportador de datos hacia Supabase.
 
 Realiza la inserción o actualización (upsert) de ofertas laborales
 en la base de datos de Supabase, utilizando la source_url como clave única.
+
+Nota: El filtrado de calidad (blacklist, skills, descripción mínima) se realiza
+ANTES de llegar aquí, en JobFilter. Este módulo solo recibe ofertas ya validadas.
 """
 
 import os
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
+
 from supabase import create_client, Client
 
 
@@ -14,10 +19,8 @@ class SupabaseExporter:
     """
     Exporta una lista de JobOffer a la base de datos de Supabase.
 
-    Maneja:
-    - Conexión mediante variables de entorno
-    - Upsert para evitar duplicados basados en source_url
-    - Filtrado básico de calidad
+    Responsabilidad única: upsert de registros ya validados.
+    El filtrado de calidad es responsabilidad de JobFilter.
     """
 
     def __init__(self):
@@ -32,47 +35,105 @@ class SupabaseExporter:
         self.supabase: Client = create_client(url, key)
         self.table_name = "job_offers"
 
+    def get_existing_urls(self, days_limit: int = 30) -> set[str]:
+        """
+        Consulta las URLs de ofertas ya guardadas en Supabase en los últimos N días.
+
+        Retorna:
+            Conjunto de URLs existentes.
+        """
+        print(f"[*] Consultando URLs existentes en Supabase (últimos {days_limit} días)...")
+        try:
+            since_date = (datetime.now(timezone.utc) - timedelta(days=days_limit)).isoformat()
+            response = (
+                self.supabase.table(self.table_name)
+                .select("source_url")
+                .gte("scraped_at", since_date)
+                .execute()
+            )
+            urls = {row["source_url"] for row in response.data if "source_url" in row}
+            print(f"[OK] Se obtuvieron {len(urls)} URLs existentes desde Supabase.")
+            return urls
+        except Exception as e:
+            print(f"[ERROR] Error al consultar URLs existentes de Supabase: {e}")
+            return set()
+
     def save(self, offers: list) -> None:
         """
-        Sube la lista de ofertas a Supabase.
+        Sube una lista de JobOffer (dataclasses) a Supabase.
+
+        Las ofertas ya vienen validadas por JobFilter — no se filtra aquí.
+        Aplica _map_to_db() para renombrar campos del dataclass a columnas de la DB.
 
         Args:
-            offers: Lista de JobOffer dataclass instances.
+            offers: Lista de instancias de JobOffer.
         """
         if not offers:
             print("[WARN] No hay ofertas para subir a Supabase.")
             return
 
-        # Convertir dataclasses a dicts y filtrar por calidad
-        valid_records = []
-        for o in offers:
-            # Filtro: Descripción mínima (100 chars)
-            if len(o.full_description) < 100:
-                continue
+        records = [self._map_to_db(asdict(o)) for o in offers]
+        self._upsert(records)
 
-            record = asdict(o)
-            # Asegurarse de que scraped_at sea compatible con ISO si es necesario,
-            # pero el scraper ya lo genera así.
-            valid_records.append(record)
+    def _map_to_db(self, record: dict) -> dict:
+        """
+        Traduce los campos del dataclass JobOffer a columnas de la tabla job_offers.
 
-        if not valid_records:
-            print("[WARN] No hay ofertas válidas tras el filtrado.")
+        Cambios aplicados:
+            - hard_skills  → raw_hard_skills  (JSONB staging en la DB)
+            - soft_skills  → raw_soft_skills  (JSONB staging en la DB)
+
+        El motor ML de devalign-api normaliza estos arrays posteriormente
+        y puebla la tabla transaccional offer_skills.
+
+        Args:
+            record: Dict generado por dataclasses.asdict(offer).
+
+        Returns:
+            Dict con las keys alineadas a las columnas de job_offers.
+        """
+        record["raw_hard_skills"] = record.pop("hard_skills", [])
+        record["raw_soft_skills"] = record.pop("soft_skills", [])
+        return record
+
+    def save_dicts(self, records: list[dict]) -> None:
+        """
+        Sube una lista de ofertas ya en formato dict (cargadas desde checkpoint).
+
+        Args:
+            records: Lista de dicts con la estructura de JobOffer.
+        """
+        if not records:
+            print("[WARN] No hay registros para subir a Supabase.")
             return
 
-        print(f"[*] Subiendo {len(valid_records)} ofertas a Supabase...")
+        mapped_records = []
+        for r in records:
+            r_copy = dict(r)
+            if "hard_skills" in r_copy:
+                r_copy["raw_hard_skills"] = r_copy.pop("hard_skills", [])
+            if "soft_skills" in r_copy:
+                r_copy["raw_soft_skills"] = r_copy.pop("soft_skills", [])
+            mapped_records.append(r_copy)
 
+        self._upsert(mapped_records)
+
+    def _upsert(self, records: list[dict]) -> None:
+        """
+        Ejecuta el upsert a Supabase usando source_url como constraint único.
+
+        Args:
+            records: Lista de dicts con la estructura de la tabla job_offers.
+        """
+        print(f"[*] Subiendo {len(records)} ofertas a Supabase...")
         try:
-            # Upsert usando source_url como constraint para evitar duplicados
-            # Nota: on_conflict='source_url' requiere que la columna tenga un UNIQUE constraint
             response = (
                 self.supabase.table(self.table_name)
-                .upsert(valid_records, on_conflict="source_url")
+                .upsert(records, on_conflict="source_url")
                 .execute()
             )
-
             print(
                 f"[OK] Supabase: {len(response.data)} registros procesados exitosamente."
             )
-
         except Exception as e:
             print(f"[ERROR] Error al subir a Supabase: {e}")

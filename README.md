@@ -10,21 +10,39 @@
 
 ## 📋 Descripción
 
-Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright (para renderizado JS) y BeautifulSoup (para parseo HTML). Los datos se limpian y exportan en formato CSV, listos para ser consumidos por modelos de IA y Sentence Transformers.
+Este proyecto extrae datos estructurados de ofertas laborales desde múltiples portales de empleo usando el **Patrón Strategy** para mantener el código modular y escalable.
+
+**Portales soportados:**
+| Portal | Estrategia | Auth |
+|---|---|---|
+| **Computrabajo.com.pe** | Playwright + BeautifulSoup (HTML rendering) | No |
+| **GetOnBoard.com** | API REST pública (`/api/v0/`) + requests | No |
+
+**Características principales:**
+- **Patrón Strategy:** Cada portal tiene su propio parser (`ComputrabajoParser`, `GetOnBoardParser`) con una interfaz común (`BaseParser`). Añadir un nuevo portal es simplemente crear un nuevo archivo en `src/`.
+- **De-duplicación Inteligente:** Al iniciar, consulta y pre-siembra automáticamente las URLs recolectadas en Supabase durante los últimos 30 días para evitar re-scrapear la misma oferta.
+- **Parada Temprana por Término (Early Stopping):** Si detecta `max_duplicates` ofertas consecutivas repetidas en un término de búsqueda, detiene ese término y avanza al siguiente de la lista en lugar de abortar toda la sesión.
+- **Resiliencia:** Sistema de checkpoints cada 20 ofertas. Si el proceso se interrumpe, no se pierden los datos.
+- **Auto-Resume:** Detecta automáticamente sesiones interrumpidas y ofrece continuar desde donde se dejó.
+- **Filtro IT Inteligente:** Pre-filtrado por título antes de fetchear detalles, ahorrando tiempo y requests.
+- **Exportación Robusta:** Upsert automático a **Supabase**, evitando duplicados.
 
 ### Variables Extraídas
 
 | Campo | Descripción |
 |-------|-------------|
 | `job_title` | Título del puesto |
-| `company` | Empresa |
-| `location` | Ubicación |
-| `hard_skills` | Competencias técnicas (delimitadas por `\|`) |
-| `soft_skills` | Habilidades blandas (delimitadas por `\|`) |
+| `company` | Empresa contratante |
+| `location` | Ubicación geográfica |
+| `salary` | Salario (limpio de metadatos irrelevantes) |
+| `modality` | Modalidad de trabajo (Remoto, Presencial, Híbrido) |
+| `date_posted` | Fecha de publicación |
+| `hard_skills` | Competencias técnicas extraídas vía NLP (Formato `TEXT[]`) |
+| `soft_skills` | Habilidades blandas extraídas (Formato `TEXT[]`) |
 | `experience_years` | Años de experiencia requeridos |
 | `education_level` | Nivel formativo mínimo |
-| `full_description` | Descripción íntegra de la vacante |
-| `source_url` | URL de origen |
+| `full_description` | Descripción íntegra de la vacante (Limpiada de ruido UI) |
+| `source_url` | URL de origen (Clave Única) |
 | `scraped_at` | Timestamp ISO de extracción |
 
 ---
@@ -35,6 +53,7 @@ Este proyecto extrae datos estructurados de ofertas laborales desde **Computraba
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (gestor de paquetes recomendado)
+- Cuenta en [Supabase](https://supabase.com)
 
 ### Instalación
 
@@ -50,7 +69,7 @@ uv pip install -r requirements.txt
 # Instalar el browser de Playwright
 playwright install chromium
 
-# Configurar variables de entorno
+# Configurar variables de entorno (Añadir SUPABASE_URL y SUPABASE_KEY)
 cp .env.example .env
 ```
 
@@ -59,15 +78,47 @@ cp .env.example .env
 ## ⚡ Uso
 
 ```bash
-# Ejecución por defecto (100 ofertas)
-python scripts/run_scraper.py
+# GetOnBoard — ejecución por defecto (API, más rápido)
+python scripts/run_scraper.py --jobs 300
 
-# Personalizar cantidad y salida
-python scripts/run_scraper.py --jobs 50 --output data/processed/custom.csv
+# Computrabajo — portal secundario (HTML, Playwright)
+python scripts/run_scraper.py --site computrabajo --jobs 100
 
-# Modo visible (debug)
+# Computrabajo — buscando múltiples palabras clave
+python scripts/run_scraper.py --site computrabajo --keywords python react "node js" --jobs 150
+
+# GetOnBoard — con categorías específicas
+python scripts/run_scraper.py --site getonboard --categories programming mobile-developer --jobs 50
+
+# Forzar parada temprana rápida (salta término tras 3 repetidos)
+python scripts/run_scraper.py --site computrabajo --keywords angular java --max-duplicates 3 --jobs 80
+
+# Prueba local (Exporta a JSON sin tocar Supabase)
+python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
+python scripts/run_scraper.py --site getonboard --jobs 5 --no-supabase --output data/gob_test.json
+
+# Modo visible (debug, solo Computrabajo)
 python scripts/run_scraper.py --jobs 10 --no-headless
 ```
+
+### Argumentos CLI
+
+| Argumento | Default | Descripción |
+|---|---|---|
+| `--site` | `getonboard` | Portal: `getonboard` \| `computrabajo` |
+| `--jobs` | `100` | Número de ofertas IT válidas a recolectar |
+| `--categories` | *(ver abajo)* | [GOB] Categorías a scrapear (espacio-separadas) |
+| `--keywords` | `["desarrollador"]` | [Computrabajo] Palabras clave a buscar (espacio-separadas) |
+| `--max-duplicates` | `10` | Límite de duplicados consecutivos antes de saltar término |
+| `--url` | *(por portal)* | Override manual de URL base |
+| `--no-headless` | `False` | Browser visible (solo Computrabajo) |
+| `--no-supabase` | `False` | Solo guardar localmente |
+| `--output` | `data/test_run.json` | Ruta del archivo de salida local |
+
+**Categorías GetOnBoard por defecto:** `programming`, `mobile-developer`, `sysadmin-devops-qa`
+
+> [!TIP]
+> Si el scraper se detiene con **Ctrl+C**, se guardará el progreso actual. Al reiniciarlo, el script te preguntará si deseas retomar la sesión anterior.
 
 ---
 
@@ -93,20 +144,25 @@ black src/ scripts/ tests/
 
 ```
 devalign-scraping/
-├── .github/workflows/lint.yml   # CI: flake8 en cada push
 ├── data/
-│   ├── raw/                     # CSVs sin procesar (gitignored)
-│   └── processed/               # CSVs limpios listos para ML
+│   ├── checkpoints/             # Sesiones interrumpidas (auto-limpieza)
+│   └── test_run.json            # Resultados locales
 ├── src/
-│   ├── browser.py               # Configuración de Playwright
-│   ├── parser.py                # Extracción con BeautifulSoup
-│   ├── cleaner.py               # Pipeline de limpieza de texto
-│   └── exporter.py              # Escritura del CSV con pandas
+│   ├── base_parser.py           # 🔑 Interfaz Strategy (BaseParser ABC)
+│   ├── parser.py                # ComputrabajoParser + JobOffer dataclass
+│   ├── getonboard_parser.py     # GetOnBoardParser (API REST, sin browser)
+│   ├── browser.py               # Ciclo de vida de Playwright
+│   ├── cleaner.py               # Pipeline de limpieza NLP
+│   ├── job_filter.py            # Pre/Post filtrado de calidad IT
+│   ├── session.py               # Orquestación de persistencia y checkpoints
+│   └── supabase_exporter.py     # Cliente Supabase (Upsert)
 ├── scripts/
-│   └── run_scraper.py           # Entry point principal
+│   └── run_scraper.py           # Entry point multi-portal con Graceful Shutdown
 ├── tests/
-│   ├── test_parser.py
-│   └── test_cleaner.py
+│   ├── test_parser.py           # Tests ComputrabajoParser
+│   ├── test_cleaner.py          # Tests TextCleaner
+│   └── test_getonboard_parser.py # Tests GetOnBoardParser (26 tests)
+├── ANTIGRAVITY.md            # Directivas para agentes de IA
 ├── .env.example
 ├── requirements.txt
 └── requirements-dev.txt
@@ -120,7 +176,9 @@ Antes de ejecutar el scraper, revisa:
 - El archivo `robots.txt` del portal target
 - Los Términos de Servicio del sitio
 
-El script incluye delays aleatorios (2.5–5s) entre requests para simular comportamiento humano y respetar la infraestructura del portal.
+El script incluye delays aleatorios entre requests para respetar la infraestructura del portal:
+- **Computrabajo:** 2.5–5s (browser headless, más agresivo)
+- **GetOnBoard:** 0.5–1.5s (API pública, más liviano)
 
 ---
 

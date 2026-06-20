@@ -1,0 +1,42 @@
+name: Scrape GetOnBoard
+
+on:
+  schedule:
+    # Ejecutar cada 3 días a las 05:00 UTC
+    - cron: '0 5 */3 * *'
+  workflow_dispatch:
+    # Permite ejecución manual desde la interfaz de GitHub
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/run_scraper.py --site getonboard --jobs 100 --max-duplicates 10
+
+      - name: Trigger devalign-api normalization
+        run: |
+          curl -H "Authorization: token ${{ secrets.GH_PAT }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               -X POST \
+               -d '{"event_type": "scraping_finished"}' \
+               https://api.github.com/repos/${{ github.repository_owner }}/devalign-api/dispatches
