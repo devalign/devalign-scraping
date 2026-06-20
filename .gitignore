@@ -1,6 +1,5 @@
 # Datos — NUNCA subir datos reales al repositorio
-data/raw/
-data/processed/*.csv
+data/
 
 # Entorno
 .env

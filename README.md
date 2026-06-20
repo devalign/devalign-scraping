@@ -1,91 +1,81 @@
-# 🕷️ DevAlign Scraper
+# 🕷️ Devalign Scraper
 
-> Recolecta ofertas laborales de portales de empleo para alimentar el **Motor de Alineación de Competencias** de DevAlign.
+> Recolecta ofertas laborales de portales de empleo (Computrabajo) para alimentar el **Motor de Agrupamiento y Clustering** de Devalign.
 
-[![Lint](https://github.com/devalign/devalign-scraping/actions/workflows/lint.yml/badge.svg)](https://github.com/devalign/devalign-scraping/actions/workflows/lint.yml)
-![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](#)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ---
 
 ## 📋 Descripción
 
-Este proyecto extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** usando Playwright (para renderizado JS) y BeautifulSoup (para parseo HTML). Los datos se limpian y exportan en formato CSV, listos para ser consumidos por modelos de IA y Sentence Transformers.
+Este módulo extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** utilizando Playwright (para el renderizado de Javascript y evasión de bloqueos básicos) y BeautifulSoup (para el parseo eficiente del HTML).
 
-### Variables Extraídas
+Los datos extraídos se consolidan, limpian y exportan en archivos CSV que sirven como entrada para los procesos de entrenamiento UMAP/HDBSCAN y el sembrado de la base de datos central de habilidades.
 
-| Campo | Descripción |
-|-------|-------------|
-| `job_title` | Título del puesto |
-| `company` | Empresa |
-| `location` | Ubicación |
-| `hard_skills` | Competencias técnicas (delimitadas por `\|`) |
-| `soft_skills` | Habilidades blandas (delimitadas por `\|`) |
-| `experience_years` | Años de experiencia requeridos |
-| `education_level` | Nivel formativo mínimo |
-| `full_description` | Descripción íntegra de la vacante |
-| `source_url` | URL de origen |
-| `scraped_at` | Timestamp ISO de extracción |
+### Variables Extraídas (Especificaciones del Dataset CSV)
+
+El archivo CSV de salida cuenta con la siguiente estructura de columnas:
+
+| Columna | Tipo | Descripción |
+| :--- | :--- | :--- |
+| `job_title` | `VARCHAR` | Título oficial de la oferta de trabajo |
+| `company` | `VARCHAR` | Nombre de la empresa ofertante |
+| `location` | `VARCHAR` | Ubicación geográfica en Perú (ej: Lima) |
+| `hard_skills` | `VARCHAR` | Habilidades duras extraídas y normalizadas, delimitadas por `\|` |
+| `soft_skills` | `VARCHAR` | Habilidades blandas extraídas, delimitadas por `\|` |
+| `experience_years` | `INTEGER` | Años mínimos de experiencia requeridos (estimado) |
+| `education_level` | `VARCHAR` | Nivel mínimo educativo (técnico, universitario, etc.) |
+| `full_description` | `TEXT` | Texto íntegro de la descripción del puesto |
+| `source_url` | `VARCHAR` | Enlace de origen hacia la vacante |
+| `scraped_at` | `TIMESTAMP` | Timestamp ISO de extracción de la información |
 
 ---
 
 ## 🚀 Setup
 
 ### Requisitos
-
 - Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (gestor de paquetes recomendado)
+- [uv](https://docs.astral.sh/uv/) (Gestor de paquetes de Python de alta velocidad)
 
 ### Instalación
 
 ```bash
-# Clonar el repositorio
-git clone https://github.com/devalign/devalign-scraping.git
-cd devalign-scraping
-
 # Crear entorno virtual e instalar dependencias
 uv venv
 uv pip install -r requirements.txt
 
-# Instalar el browser de Playwright
+# Instalar navegadores para Playwright
 playwright install chromium
 
-# Configurar variables de entorno
+# Configurar entorno
 cp .env.example .env
 ```
 
 ---
 
-## ⚡ Uso
+## ⚡ Uso e Ingesta Offline (Proceso de Sembrado)
+
+### 1. Ejecución del Scraper
+Para iniciar el proceso de extracción de datos laborales localmente:
 
 ```bash
-# Ejecución por defecto (100 ofertas)
+# Extraer 100 ofertas laborales (por defecto)
 python scripts/run_scraper.py
 
-# Personalizar cantidad y salida
-python scripts/run_scraper.py --jobs 50 --output data/processed/custom.csv
-
-# Modo visible (debug)
-python scripts/run_scraper.py --jobs 10 --no-headless
+# Personalizar cantidad y destino
+python scripts/run_scraper.py --jobs 200 --output data/processed/computrabajo_vacancies.csv
 ```
 
----
+### 2. Proceso de Ingesta Offline (Backend Seed)
+Una vez generado el dataset en formato CSV, para alimentar la base de datos de producción de `devalign-api`:
 
-## 🧪 Desarrollo
-
-```bash
-# Instalar dependencias de desarrollo
-uv pip install -r requirements-dev.txt
-
-# Ejecutar tests
-pytest tests/ -v
-
-# Lint
-flake8 src/ scripts/ --max-line-length=100
-
-# Formateo
-black src/ scripts/ tests/
-```
+1. Mover o copiar el archivo CSV resultante a la carpeta de datos del backend: `c:\Projects\Devalign\devalign-api\data\raw\`.
+2. Dirigirse al repositorio del backend (`devalign-api`) y ejecutar el script de sembrado:
+   ```bash
+   python scripts/seed_demo_data.py --csv data/raw/computrabajo_vacancies.csv
+   ```
+   *Este proceso normalizará semánticamente las habilidades importadas por lotes y recalculará la información de los clústeres.*
 
 ---
 
@@ -93,37 +83,26 @@ black src/ scripts/ tests/
 
 ```
 devalign-scraping/
-├── .github/workflows/lint.yml   # CI: flake8 en cada push
 ├── data/
-│   ├── raw/                     # CSVs sin procesar (gitignored)
-│   └── processed/               # CSVs limpios listos para ML
+│   ├── raw/                     # Datos en bruto temporales
+│   └── processed/               # CSVs limpios consolidados listos para ingesta
 ├── src/
-│   ├── browser.py               # Configuración de Playwright
-│   ├── parser.py                # Extracción con BeautifulSoup
-│   ├── cleaner.py               # Pipeline de limpieza de texto
-│   └── exporter.py              # Escritura del CSV con pandas
+│   ├── browser.py               # Lógica de sesión con Playwright Chromium
+│   ├── parser.py                # Parseo y extracción de selectores HTML con BeautifulSoup
+│   ├── cleaner.py               # Limpieza y filtrado básico de texto de la oferta
+│   └── exporter.py              # Exportador a estructura tabular (Pandas/CSV)
 ├── scripts/
-│   └── run_scraper.py           # Entry point principal
-├── tests/
-│   ├── test_parser.py
-│   └── test_cleaner.py
-├── .env.example
-├── requirements.txt
-└── requirements-dev.txt
+│   └── run_scraper.py           # Script ejecutable principal
+├── tests/                       # Suite de pruebas unitarias
+└── requirements.txt
 ```
 
 ---
 
-## ⚖️ Ética y Legalidad
+## 🔗 Referencias a la Documentación Principal
 
-Antes de ejecutar el scraper, revisa:
-- El archivo `robots.txt` del portal target
-- Los Términos de Servicio del sitio
+El diseño del pipeline de datos y su rol en la arquitectura general de Devalign se detallan en el repositorio de documentación central:
 
-El script incluye delays aleatorios (2.5–5s) entre requests para simular comportamiento humano y respetar la infraestructura del portal.
-
----
-
-## 📄 Licencia
-
-MIT © [DevAlign](https://github.com/devalign)
+- [🏗️ Arquitectura Técnica](../devalign-docs/ARCHITECTURE.md)
+- [🎯 Alcance MVP](../devalign-docs/SCOPE.md)
+- [🧠 Lógica Core e Inferencia](../devalign-docs/MODEL.md)
