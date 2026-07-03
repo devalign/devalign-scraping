@@ -13,22 +13,21 @@ Este módulo extrae datos estructurados de ofertas laborales desde **Computrabaj
 
 Los datos extraídos se consolidan, limpian y exportan en archivos CSV que sirven como entrada para los procesos de entrenamiento UMAP/HDBSCAN y el sembrado de la base de datos central de habilidades.
 
-### Variables Extraídas (Especificaciones del Dataset CSV)
-
-El archivo CSV de salida cuenta con la siguiente estructura de columnas:
-
-| Columna | Tipo | Descripción |
-| :--- | :--- | :--- |
-| `job_title` | `VARCHAR` | Título oficial de la oferta de trabajo |
-| `company` | `VARCHAR` | Nombre de la empresa ofertante |
-| `location` | `VARCHAR` | Ubicación geográfica en Perú (ej: Lima) |
-| `hard_skills` | `VARCHAR` | Habilidades duras extraídas y normalizadas, delimitadas por `\|` |
-| `soft_skills` | `VARCHAR` | Habilidades blandas extraídas, delimitadas por `\|` |
-| `experience_years` | `INTEGER` | Años mínimos de experiencia requeridos (estimado) |
-| `education_level` | `VARCHAR` | Nivel mínimo educativo (técnico, universitario, etc.) |
-| `full_description` | `TEXT` | Texto íntegro de la descripción del puesto |
-| `source_url` | `VARCHAR` | Enlace de origen hacia la vacante |
-| `scraped_at` | `TIMESTAMP` | Timestamp ISO de extracción de la información |
+| Campo | Descripción |
+|-------|-------------|
+| `job_title` | Título del puesto |
+| `company` | Empresa contratante |
+| `location` | Ubicación geográfica |
+| `salary` | Salario (limpio de metadatos irrelevantes) |
+| `modality` | Modalidad de trabajo (Remoto, Presencial, Híbrido) |
+| `date_posted` | Fecha de publicación |
+| `hard_skills` | Competencias técnicas extraídas vía NLP (Formato `TEXT[]`) |
+| `soft_skills` | Habilidades blandas extraídas (Formato `TEXT[]`) |
+| `experience_years` | Años de experiencia requeridos |
+| `education_level` | Nivel formativo mínimo |
+| `full_description` | Descripción íntegra de la vacante (Limpiada de ruido UI) |
+| `source_url` | URL de origen (Clave Única) |
+| `scraped_at` | Timestamp ISO de extracción |
 
 ---
 
@@ -36,7 +35,8 @@ El archivo CSV de salida cuenta con la siguiente estructura de columnas:
 
 ### Requisitos
 - Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (Gestor de paquetes de Python de alta velocidad)
+- [uv](https://docs.astral.sh/uv/) (gestor de paquetes recomendado)
+- Cuenta en [Supabase](https://supabase.com)
 
 ### Instalación
 
@@ -48,7 +48,7 @@ uv pip install -r requirements.txt
 # Instalar navegadores para Playwright
 playwright install chromium
 
-# Configurar entorno
+# Configurar variables de entorno (Añadir SUPABASE_URL y SUPABASE_KEY)
 cp .env.example .env
 ```
 
@@ -60,15 +60,51 @@ cp .env.example .env
 Para iniciar el proceso de extracción de datos laborales localmente:
 
 ```bash
-# Extraer 100 ofertas laborales (por defecto)
-python scripts/run_scraper.py
+# GetOnBoard — ejecución por defecto (API, más rápido)
+python scripts/run_scraper.py --jobs 300
 
-# Personalizar cantidad y destino
-python scripts/run_scraper.py --jobs 200 --output data/processed/computrabajo_vacancies.csv
+# Computrabajo — portal secundario (HTML, Playwright)
+python scripts/run_scraper.py --site computrabajo --jobs 100
+
+# Computrabajo — buscando múltiples palabras clave
+python scripts/run_scraper.py --site computrabajo --keywords python react "node js" --jobs 150
+
+# GetOnBoard — con categorías específicas
+python scripts/run_scraper.py --site getonboard --categories programming mobile-developer --jobs 50
+
+# Forzar parada temprana rápida (salta término tras 3 repetidos)
+python scripts/run_scraper.py --site computrabajo --keywords angular java --max-duplicates 3 --jobs 80
+
+# Prueba local (Exporta a JSON sin tocar Supabase)
+python scripts/run_scraper.py --jobs 5 --no-supabase --output data/test_run.json
+python scripts/run_scraper.py --site getonboard --jobs 5 --no-supabase --output data/gob_test.json
+
+# Modo visible (debug, solo Computrabajo)
+python scripts/run_scraper.py --jobs 10 --no-headless
 ```
 
-### 2. Proceso de Ingesta Offline (Backend Seed)
-Una vez generado el dataset en formato CSV, para alimentar la base de datos de producción de `devalign-api`:
+### Argumentos CLI
+
+| Argumento | Default | Descripción |
+|---|---|---|
+| `--site` | `getonboard` | Portal: `getonboard` \| `computrabajo` |
+| `--jobs` | `100` | Número de ofertas IT válidas a recolectar |
+| `--categories` | *(ver abajo)* | [GOB] Categorías a scrapear (espacio-separadas) |
+| `--keywords` | `["desarrollador"]` | [Computrabajo] Palabras clave a buscar (espacio-separadas) |
+| `--max-duplicates` | `10` | Límite de duplicados consecutivos antes de saltar término |
+| `--url` | *(por portal)* | Override manual de URL base |
+| `--no-headless` | `False` | Browser visible (solo Computrabajo) |
+| `--no-supabase` | `False` | Solo guardar localmente |
+| `--output` | `data/test_run.json` | Ruta del archivo de salida local |
+
+**Categorías GetOnBoard por defecto:** `programming`, `mobile-developer`, `sysadmin-devops-qa`
+
+> [!TIP]
+> Si el scraper se detiene con **Ctrl+C**, se guardará el progreso actual. Al reiniciarlo, el script te preguntará si deseas retomar la sesión anterior.
+
+---
+
+## 🧪 Desarrollo
 
 1. Mover o copiar el archivo CSV resultante a la carpeta de datos del backend: `c:\Projects\Devalign\devalign-api\data\raw\`.
 2. Dirigirse al repositorio del backend (`devalign-api`) y ejecutar el script de sembrado:
@@ -84,22 +120,42 @@ Una vez generado el dataset en formato CSV, para alimentar la base de datos de p
 ```
 devalign-scraping/
 ├── data/
-│   ├── raw/                     # Datos en bruto temporales
-│   └── processed/               # CSVs limpios consolidados listos para ingesta
+│   ├── checkpoints/             # Sesiones interrumpidas (auto-limpieza)
+│   └── test_run.json            # Resultados locales
 ├── src/
-│   ├── browser.py               # Lógica de sesión con Playwright Chromium
-│   ├── parser.py                # Parseo y extracción de selectores HTML con BeautifulSoup
-│   ├── cleaner.py               # Limpieza y filtrado básico de texto de la oferta
-│   └── exporter.py              # Exportador a estructura tabular (Pandas/CSV)
+│   ├── base_parser.py           # 🔑 Interfaz Strategy (BaseParser ABC)
+│   ├── parser.py                # ComputrabajoParser + JobOffer dataclass
+│   ├── getonboard_parser.py     # GetOnBoardParser (API REST, sin browser)
+│   ├── browser.py               # Ciclo de vida de Playwright
+│   ├── cleaner.py               # Pipeline de limpieza NLP
+│   ├── job_filter.py            # Pre/Post filtrado de calidad IT
+│   ├── session.py               # Orquestación de persistencia y checkpoints
+│   └── supabase_exporter.py     # Cliente Supabase (Upsert)
 ├── scripts/
-│   └── run_scraper.py           # Script ejecutable principal
-├── tests/                       # Suite de pruebas unitarias
-└── requirements.txt
+│   └── run_scraper.py           # Entry point multi-portal con Graceful Shutdown
+├── tests/
+│   ├── test_parser.py           # Tests ComputrabajoParser
+│   ├── test_cleaner.py          # Tests TextCleaner
+│   └── test_getonboard_parser.py # Tests GetOnBoardParser (26 tests)
+├── ANTIGRAVITY.md            # Directivas para agentes de IA
+├── .env.example
+├── requirements.txt
+└── requirements-dev.txt
 ```
 
 ---
 
-## 🔗 Referencias a la Documentación Principal
+## ⚖️ Ética y Legalidad
+
+Antes de ejecutar el scraper, revisa:
+- El archivo `robots.txt` del portal target
+- Los Términos de Servicio del sitio
+
+El script incluye delays aleatorios entre requests para respetar la infraestructura del portal:
+- **Computrabajo:** 2.5–5s (browser headless, más agresivo)
+- **GetOnBoard:** 0.5–1.5s (API pública, más liviano)
+
+---
 
 El diseño del pipeline de datos y su rol en la arquitectura general de Devalign se detallan en el repositorio de documentación central:
 
