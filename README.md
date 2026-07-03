@@ -1,33 +1,17 @@
-# 🕷️ DevAlign Scraper
+# 🕷️ Devalign Scraper
 
-> Recolecta ofertas laborales de portales de empleo para alimentar el **Motor de Alineación de Competencias** de DevAlign.
+> Recolecta ofertas laborales de portales de empleo (Computrabajo) para alimentar el **Motor de Agrupamiento y Clustering** de Devalign.
 
-[![Lint](https://github.com/devalign/devalign-scraping/actions/workflows/lint.yml/badge.svg)](https://github.com/devalign/devalign-scraping/actions/workflows/lint.yml)
-![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](#)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ---
 
 ## 📋 Descripción
 
-Este proyecto extrae datos estructurados de ofertas laborales desde múltiples portales de empleo usando el **Patrón Strategy** para mantener el código modular y escalable.
+Este módulo extrae datos estructurados de ofertas laborales desde **Computrabajo.com.pe** utilizando Playwright (para el renderizado de Javascript y evasión de bloqueos básicos) y BeautifulSoup (para el parseo eficiente del HTML).
 
-**Portales soportados:**
-| Portal | Estrategia | Auth |
-|---|---|---|
-| **Computrabajo.com.pe** | Playwright + BeautifulSoup (HTML rendering) | No |
-| **GetOnBoard.com** | API REST pública (`/api/v0/`) + requests | No |
-
-**Características principales:**
-- **Patrón Strategy:** Cada portal tiene su propio parser (`ComputrabajoParser`, `GetOnBoardParser`) con una interfaz común (`BaseParser`). Añadir un nuevo portal es simplemente crear un nuevo archivo en `src/`.
-- **De-duplicación Inteligente:** Al iniciar, consulta y pre-siembra automáticamente las URLs recolectadas en Supabase durante los últimos 30 días para evitar re-scrapear la misma oferta.
-- **Parada Temprana por Término (Early Stopping):** Si detecta `max_duplicates` ofertas consecutivas repetidas en un término de búsqueda, detiene ese término y avanza al siguiente de la lista en lugar de abortar toda la sesión.
-- **Resiliencia:** Sistema de checkpoints cada 20 ofertas. Si el proceso se interrumpe, no se pierden los datos.
-- **Auto-Resume:** Detecta automáticamente sesiones interrumpidas y ofrece continuar desde donde se dejó.
-- **Filtro IT Inteligente:** Pre-filtrado por título antes de fetchear detalles, ahorrando tiempo y requests.
-- **Exportación Robusta:** Upsert automático a **Supabase**, evitando duplicados.
-
-### Variables Extraídas
+Los datos extraídos se consolidan, limpian y exportan en archivos CSV que sirven como entrada para los procesos de entrenamiento UMAP/HDBSCAN y el sembrado de la base de datos central de habilidades.
 
 | Campo | Descripción |
 |-------|-------------|
@@ -50,7 +34,6 @@ Este proyecto extrae datos estructurados de ofertas laborales desde múltiples p
 ## 🚀 Setup
 
 ### Requisitos
-
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (gestor de paquetes recomendado)
 - Cuenta en [Supabase](https://supabase.com)
@@ -58,15 +41,11 @@ Este proyecto extrae datos estructurados de ofertas laborales desde múltiples p
 ### Instalación
 
 ```bash
-# Clonar el repositorio
-git clone https://github.com/devalign/devalign-scraping.git
-cd devalign-scraping
-
 # Crear entorno virtual e instalar dependencias
 uv venv
 uv pip install -r requirements.txt
 
-# Instalar el browser de Playwright
+# Instalar navegadores para Playwright
 playwright install chromium
 
 # Configurar variables de entorno (Añadir SUPABASE_URL y SUPABASE_KEY)
@@ -75,7 +54,10 @@ cp .env.example .env
 
 ---
 
-## ⚡ Uso
+## ⚡ Uso e Ingesta Offline (Proceso de Sembrado)
+
+### 1. Ejecución del Scraper
+Para iniciar el proceso de extracción de datos laborales localmente:
 
 ```bash
 # GetOnBoard — ejecución por defecto (API, más rápido)
@@ -124,19 +106,12 @@ python scripts/run_scraper.py --jobs 10 --no-headless
 
 ## 🧪 Desarrollo
 
-```bash
-# Instalar dependencias de desarrollo
-uv pip install -r requirements-dev.txt
-
-# Ejecutar tests
-pytest tests/ -v
-
-# Lint
-flake8 src/ scripts/ --max-line-length=100
-
-# Formateo
-black src/ scripts/ tests/
-```
+1. Mover o copiar el archivo CSV resultante a la carpeta de datos del backend: `c:\Projects\Devalign\devalign-api\data\raw\`.
+2. Dirigirse al repositorio del backend (`devalign-api`) y ejecutar el script de sembrado:
+   ```bash
+   python scripts/seed_demo_data.py --csv data/raw/computrabajo_vacancies.csv
+   ```
+   *Este proceso normalizará semánticamente las habilidades importadas por lotes y recalculará la información de los clústeres.*
 
 ---
 
@@ -182,6 +157,11 @@ El script incluye delays aleatorios entre requests para respetar la infraestruct
 
 ---
 
-## 📄 Licencia
+El diseño del pipeline de datos y su rol en la arquitectura general de Devalign se detallan en el repositorio de documentación central:
 
-MIT © [DevAlign](https://github.com/devalign)
+- [🏗️ Arquitectura Técnica](../devalign-docs/ARCHITECTURE.md)
+- [🎯 Alcance MVP](../devalign-docs/SCOPE.md)
+- [🧠 Lógica Core e Inferencia](../devalign-docs/MODEL.md)
+- [📄 Documento de Requerimientos de Producto (PRD)](../devalign-docs/PRD.md)
+- [📋 Product Backlog](../devalign-docs/PRODUCT_BACKLOG.md)
+- [🏃 Sprint Backlog](../devalign-docs/SPRINT_BACKLOG.md)
