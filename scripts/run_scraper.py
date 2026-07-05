@@ -37,6 +37,9 @@ from src.job_filter import JobFilter         # noqa: E402
 from src.parser import ComputrabajoParser    # noqa: E402
 from src.session import SessionManager       # noqa: E402
 from src.supabase_exporter import SupabaseExporter  # noqa: E402
+from src.remotive_parser import RemotiveParser      # noqa: E402
+from src.arbeitnow_parser import ArbeitnowParser    # noqa: E402
+from src.weworkremotely_parser import WeworkremotelyParser # noqa: E402
 
 # Cargar .env si existe
 load_dotenv()
@@ -45,6 +48,9 @@ load_dotenv()
 SITE_DEFAULTS: dict[str, str] = {
     "computrabajo": "https://pe.computrabajo.com/trabajo-de-desarrollador",
     "getonboard": "https://www.getonbrd.com",
+    "remotive": "https://remotive.com",
+    "arbeitnow": "https://www.arbeitnow.com",
+    "weworkremotely": "https://weworkremotely.com",
 }
 DEFAULT_SITE = os.getenv("TARGET_SITE", "getonboard")
 DEFAULT_URL = os.getenv(
@@ -84,7 +90,7 @@ def parse_args():
         "--site",
         type=str,
         default=DEFAULT_SITE,
-        choices=["computrabajo", "getonboard"],
+        choices=["computrabajo", "getonboard", "remotive", "arbeitnow", "weworkremotely"],
         help=f"Portal de empleo a scrapear (default: {DEFAULT_SITE})",
     )
     parser.add_argument(
@@ -158,6 +164,12 @@ def _build_parser(site: str, term: str, base_url_override: str | None = None):
     """
     if site == "getonboard":
         return GetOnBoardParser(categories=[term])
+    elif site == "remotive":
+        return RemotiveParser(category=term if term != "software-dev" else None)
+    elif site == "arbeitnow":
+        return ArbeitnowParser()
+    elif site == "weworkremotely":
+        return WeworkremotelyParser()
     
     if term == "custom-url" and base_url_override:
         parser = ComputrabajoParser()
@@ -232,6 +244,10 @@ def run(
     
     if site == "getonboard":
         terms = categories or ["programming", "mobile-developer", "sysadmin-devops-qa"]
+    elif site == "remotive":
+        terms = categories or ["software-dev"]
+    elif site in ("arbeitnow", "weworkremotely"):
+        terms = ["all"]
     else:
         if is_url_override:
             terms = ["custom-url"]
@@ -248,7 +264,7 @@ def run(
 
     # ── Pre-sembrar URLs desde Supabase ───────────────────────────────
     if not no_supabase and exporter:
-        existing_urls = exporter.get_existing_urls()
+        existing_urls = exporter.get_existing_urls(portal_name=site)
         session.preseed_processed_urls(existing_urls)
 
     # ── Detección automática de sesión previa ──────────────────────────

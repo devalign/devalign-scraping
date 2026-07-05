@@ -35,19 +35,21 @@ class SupabaseExporter:
         self.supabase: Client = create_client(url, key)
         self.table_name = "job_offers"
 
-    def get_existing_urls(self, days_limit: int = 30) -> set[str]:
+    def get_existing_urls(self, portal_name: str, days_limit: int = 30) -> set[str]:
         """
-        Consulta las URLs de ofertas ya guardadas en Supabase en los últimos N días.
+        Consulta las URLs de ofertas ya guardadas en Supabase en los últimos N días,
+        filtrando por portal.
 
         Retorna:
             Conjunto de URLs existentes.
         """
-        print(f"[*] Consultando URLs existentes en Supabase (últimos {days_limit} días)...")
+        print(f"[*] Consultando URLs existentes en Supabase para {portal_name} (últimos {days_limit} días)...")
         try:
             since_date = (datetime.now(timezone.utc) - timedelta(days=days_limit)).isoformat()
             response = (
                 self.supabase.table(self.table_name)
                 .select("source_url")
+                .eq("portal", portal_name)
                 .gte("scraped_at", since_date)
                 .execute()
             )
