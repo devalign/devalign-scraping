@@ -87,11 +87,33 @@ class TextCleaner:
 
     def clean_text_field(self, text: str) -> str:
         """Aplica el pipeline completo sobre un campo de texto libre."""
+        if not text:
+            return ""
         text = self.fix_encoding(text)
         text = self.remove_html_artifacts(text)
         text = self.remove_noise_patterns(text)
         text = self.normalize_whitespace(text)
         return text
+
+    def extract_salary_regex(self, text: str) -> str:
+        """Busca patrones comunes de salarios en el texto crudo."""
+        if not text:
+            return ""
+        # Buscar S/. o USD seguido de números (ej. S/ 3000, $ 2.500)
+        match = re.search(r'(S/\.?|\$|USD|EUR)\s*\d{1,3}(?:[.,]\d{3})*(?:\s*-\s*(S/\.?|\$|USD|EUR)?\s*\d{1,3}(?:[.,]\d{3})*)?', text, re.IGNORECASE)
+        if match:
+            return match.group(0).strip()
+        return ""
+
+    def extract_experience_regex(self, text: str) -> str:
+        """Busca patrones comunes de experiencia en el texto crudo."""
+        if not text:
+            return ""
+        # Buscar X+ años, X a Y años, X years
+        match = re.search(r'(\d+)\+?\s*(a\s*\d+)?\s*(años|years)\b', text, re.IGNORECASE)
+        if match:
+            return match.group(0).strip()
+        return ""
 
     def clean(self, offer) -> object:
         """
@@ -104,14 +126,25 @@ class TextCleaner:
         Returns:
             Nueva instancia de JobOffer con campos limpiados.
         """
+        clean_desc = self.clean_text_field(offer.full_description)
+        
+        salary = offer.salary.strip()
+        if not salary:
+            salary = self.extract_salary_regex(clean_desc)
+            
+        experience = offer.experience_years.strip().lower()
+        if not experience:
+            experience = self.extract_experience_regex(clean_desc)
+            
         return dc_replace(
             offer,
             job_title=self.clean_text_field(offer.job_title),
             company=self.clean_text_field(offer.company),
             location=self.clean_text_field(offer.location),
-            full_description=self.clean_text_field(offer.full_description),
+            full_description=clean_desc,
             hard_skills=self.clean_skills_list(offer.hard_skills),
             soft_skills=self.clean_skills_list(offer.soft_skills),
-            experience_years=offer.experience_years.strip().lower(),
+            experience_years=experience,
             education_level=offer.education_level.strip().lower(),
+            salary=salary,
         )

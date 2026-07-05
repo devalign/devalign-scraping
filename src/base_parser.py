@@ -66,3 +66,25 @@ class BaseParser(ABC):
         Returns:
             Instancia de JobOffer con todos los campos disponibles poblados.
         """
+
+    @staticmethod
+    def extract_from_json_ld(html: str) -> dict:
+        """
+        Extrae y parsea el primer bloque application/ld+json que sea de tipo JobPosting.
+        Retorna un diccionario con los datos estructurados o un diccionario vacío si falla.
+        """
+        import json
+        from bs4 import BeautifulSoup
+        
+        soup = BeautifulSoup(html, "lxml")
+        json_ld_scripts = soup.select('script[type="application/ld+json"]')
+        
+        for script in json_ld_scripts:
+            try:
+                data = json.loads(script.string)
+                if isinstance(data, dict) and data.get("@type") == "JobPosting":
+                    return data
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                continue
+        return {}
+
