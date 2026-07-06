@@ -199,21 +199,37 @@ class ComputrabajoParser(BaseParser):
 
         # 2. Empresa y Ubicación (Extracción Quirúrgica)
         # PRIORIDAD 1: Metadatos Estructurados (JSON-LD) - Es lo más preciso
-        json_ld = soup.select('script[type="application/ld+json"]')
-        for script in json_ld:
-            try:
-                data = json.loads(script.string)
-                if isinstance(data, dict) and data.get("@type") == "JobPosting":
-                    if not offer.company:
-                        hiring_org = data.get("hiringOrganization", {})
-                        offer.company = hiring_org.get("name", "") if isinstance(hiring_org, dict) else hiring_org
-                    if not offer.location:
-                        loc = data.get("jobLocation", {}).get("address", {})
-                        if isinstance(loc, dict):
-                            address = f"{loc.get('addressLocality', '')}, {loc.get('addressRegion', '')}".strip(", ")
-                            offer.location = address
-            except Exception:
-                continue
+        json_data = self.extract_from_json_ld(html)
+        if json_data:
+            # Empresa
+            if not offer.company:
+                hiring_org = json_data.get("hiringOrganization", {})
+                offer.company = hiring_org.get("name", "") if isinstance(hiring_org, dict) else hiring_org
+            # Ubicación
+            if not offer.location:
+                loc = json_data.get("jobLocation", {}).get("address", {})
+                if isinstance(loc, dict):
+                    address = f"{loc.get('addressLocality', '')}, {loc.get('addressRegion', '')}".strip(", ")
+                    offer.location = address
+            # Salario
+            if not offer.salary:
+                base_salary = json_data.get("baseSalary", {})
+                if isinstance(base_salary, dict):
+                    val = base_salary.get("value", {})
+                    if isinstance(val, dict):
+                        min_val = val.get("minValue")
+                        max_val = val.get("maxValue")
+                        curr = val.get("unitText", "")
+                        if min_val and max_val:
+                            offer.salary = f"{curr} {min_val} - {max_val}"
+            # Experiencia
+            if not offer.experience_years:
+                exp = json_data.get("experienceRequirements", {})
+                if isinstance(exp, dict) and exp.get("monthsOfExperience"):
+                    months = int(exp.get("monthsOfExperience", 0))
+                    offer.experience_years = f"{months // 12} years" if months >= 12 else f"{months} months"
+                elif isinstance(exp, str):
+                    offer.experience_years = exp
 
         # PRIORIDAD 2: "Acerca de" (Súper fiable si existe)
         if not offer.company or len(offer.company) < 3:

@@ -1,15 +1,19 @@
-name: Scrape GetOnBoard
+name: Daily Scraper (Parallel Matrix)
 
 on:
   schedule:
-    # Ejecutar cada 3 días a las 05:00 UTC
-    - cron: '0 5 */3 * *'
+    # Ejecutar todos los días a las 05:00 UTC
+    - cron: '0 5 * * *'
   workflow_dispatch:
     # Permite ejecución manual desde la interfaz de GitHub
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site: [computrabajo, getonboard, remotive, arbeitnow, weworkremotely]
 
     steps:
       - name: Checkout repository
@@ -26,18 +30,26 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+      # Solo necesario para computrabajo si decidimos agregarlo luego,
+      # pero lo mantenemos por si agregamos tests con browser.
       - name: Install Playwright browsers
         run: |
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Run scraper
+      - name: Run scraper para ${{ matrix.site }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python scripts/run_scraper.py --site getonboard --jobs 100 --max-duplicates 10
+          # Incrementamos los jobs meta a 500 para aumentar el dataset
+          python scripts/run_scraper.py --site ${{ matrix.site }} --jobs 500 --max-duplicates 20
 
+  trigger_api:
+    needs: scrape
+    runs-on: ubuntu-latest
+    if: always() # Ejecutar aunque algún scraper de la matrix falle (así se guardan los que funcionaron)
+    steps:
       - name: Trigger devalign-api normalization
         run: |
           curl -H "Authorization: token ${{ secrets.GH_PAT }}" \
