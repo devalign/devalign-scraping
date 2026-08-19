@@ -2,8 +2,8 @@ name: Daily Scraper (Parallel Matrix)
 
 on:
   schedule:
-    # Ejecutar todos los días a las 05:00 UTC
-    - cron: '0 5 * * *'
+    # Ejecutar todos los domingos a las 05:00 UTC
+    - cron: '0 5 * * 0'
   workflow_dispatch:
     # Permite ejecución manual desde la interfaz de GitHub
 
