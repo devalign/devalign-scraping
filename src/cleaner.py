@@ -96,11 +96,16 @@ class TextCleaner:
         return text
 
     def extract_salary_regex(self, text: str) -> str:
-        """Busca patrones comunes de salarios en el texto crudo."""
+        """Busca patrones comunes de salarios en el texto crudo con soporte multi-moneda LATAM."""
         if not text:
             return ""
-        # Buscar S/. o USD seguido de números (ej. S/ 3000, $ 2.500)
-        match = re.search(r'(S/\.?|\$|USD|EUR)\s*\d{1,3}(?:[.,]\d{3})*(?:\s*-\s*(S/\.?|\$|USD|EUR)?\s*\d{1,3}(?:[.,]\d{3})*)?', text, re.IGNORECASE)
+        # Buscar S/., $, USD, EUR, COP, MXN, CLP, ARS, PEN seguido de números (ej. S/ 3000, $ 2.500.000, COP 5'000.000)
+        currency_pattern = r'(?:S/\.?|\$|USD|EUR|COP|MXN|CLP|ARS|PEN)'
+        match = re.search(
+            rf'{currency_pattern}\s*\d{{1,3}}(?:[.,\']\d{{3}})*(?:\s*-\s*{currency_pattern}?\s*\d{{1,3}}(?:[.,\']\d{{3}})*)?',
+            text,
+            re.IGNORECASE
+        )
         if match:
             return match.group(0).strip()
         return ""

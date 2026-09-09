@@ -27,12 +27,23 @@ import time
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+# Reconfigurar stdout/stderr en Windows para evitar UnicodeEncodeError
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Agregar el directorio raíz del proyecto al path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.browser import BrowserManager        # noqa: E402
 from src.cleaner import TextCleaner          # noqa: E402
-from src.getonboard_parser import GetOnBoardParser   # noqa: E402
+from src.getonboard_parser import (
+    GetOnBoardParser,
+    DEFAULT_CATEGORIES as GOB_DEFAULT_CATEGORIES,
+)
 from src.job_filter import JobFilter         # noqa: E402
 from src.parser import ComputrabajoParser    # noqa: E402
 from src.session import SessionManager       # noqa: E402
@@ -126,6 +137,13 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--country",
+        type=str,
+        default="pe",
+        choices=["pe", "co", "mx", "cl", "ar"],
+        help="[Solo Computrabajo] Código de país (default: pe. Opciones: pe, co, mx, cl, ar)",
+    )
+    parser.add_argument(
         "--no-headless",
         action="store_true",
         help="Ejecutar browser en modo visible (para debug; solo aplica a Computrabajo)",
@@ -150,7 +168,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def _build_parser(site: str, term: str, base_url_override: str | None = None):
+def _build_parser(
+    site: str,
+    term: str,
+    base_url_override: str | None = None,
+    country: str = "pe",
+):
     """
     Factory: instancia el parser correcto según el portal y término.
 
@@ -158,6 +181,7 @@ def _build_parser(site: str, term: str, base_url_override: str | None = None):
         site:              Identificador del portal ("computrabajo" | "getonboard").
         term:              Término de búsqueda (keyword o categoría).
         base_url_override: URL de override manual.
+        country:           Código de país para Computrabajo (pe, co, mx, cl, ar).
 
     Returns:
         Instancia de BaseParser lista para usar.
@@ -172,11 +196,11 @@ def _build_parser(site: str, term: str, base_url_override: str | None = None):
         return WeworkremotelyParser()
     
     if term == "custom-url" and base_url_override:
-        parser = ComputrabajoParser()
+        parser = ComputrabajoParser(country=country)
         parser.base_url = base_url_override
         return parser
         
-    return ComputrabajoParser(keyword=term)
+    return ComputrabajoParser(keyword=term, country=country)
 
 
 def _prompt_resume() -> bool:
@@ -220,6 +244,7 @@ def run(
     categories: list[str] | None = None,
     keywords: list[str] | None = None,
     max_duplicates: int = 10,
+    country: str = "pe",
 ):
     """
     Ejecuta el pipeline completo de scraping con resiliencia.
@@ -234,16 +259,22 @@ def run(
         categories:  Categorías GetOnBoard (None usa el default del parser).
         keywords:    Palabras clave Computrabajo (None usa el default del parser).
         max_duplicates: Límite de duplicados consecutivos antes de detener (parada temprana).
+        country:     Código de país para Computrabajo (pe, co, mx, cl, ar).
     """
     cleaner = TextCleaner()
     job_filter = JobFilter()
     exporter = None if no_supabase else SupabaseExporter()
 
     # ── Determinar los términos a buscar ──────────────────────────────
-    is_url_override = (base_url != SITE_DEFAULTS.get(site, ""))
+    default_ct_url = f"https://{country}.computrabajo.com/trabajo-de-desarrollador"
+    is_url_override = (
+        (base_url != default_ct_url and not keywords)
+        if site == "computrabajo"
+        else (base_url != SITE_DEFAULTS.get(site, ""))
+    )
     
     if site == "getonboard":
-        terms = categories or ["programming", "mobile-developer", "sysadmin-devops-qa"]
+        terms = categories or GOB_DEFAULT_CATEGORIES
     elif site == "remotive":
         terms = categories or ["software-dev"]
     elif site in ("arbeitnow", "weworkremotely"):
@@ -278,6 +309,8 @@ def run(
 
     print("\n[*] DevAlign Scraper")
     print(f"   Portal:      {site.capitalize()}")
+    if site == "computrabajo":
+        print(f"   País:        {country.upper()}")
     print(f"   Términos:    {terms}")
     print(f"   Meta IT:     {target_jobs} ofertas válidas")
     print(f"   Ya cargadas: {session.count}")
@@ -302,7 +335,12 @@ def run(
                 print(f"[*] Iniciando búsqueda de término: '{term}'")
                 print(f"{'='*60}")
 
-                parser = _build_parser(site, term, base_url_override=base_url if is_url_override else None)
+                parser = _build_parser(
+                    site,
+                    term,
+                    base_url_override=base_url if is_url_override else None,
+                    country=country,
+                )
                 session.current_page = 1
                 consecutive_duplicates = 0
                 term_errors = 0
@@ -417,7 +455,13 @@ def run(
 if __name__ == "__main__":
     args = parse_args()
     headless = DEFAULT_HEADLESS and not args.no_headless
-    base_url = args.url or SITE_DEFAULTS.get(args.site, SITE_DEFAULTS["computrabajo"])
+    if args.url:
+        base_url = args.url
+    elif args.site == "computrabajo":
+        base_url = f"https://{args.country}.computrabajo.com/trabajo-de-desarrollador"
+    else:
+        base_url = SITE_DEFAULTS.get(args.site, SITE_DEFAULTS["computrabajo"])
+
     run(
         target_jobs=args.jobs,
         base_url=base_url,
@@ -428,4 +472,5 @@ if __name__ == "__main__":
         categories=args.categories,
         keywords=args.keywords,
         max_duplicates=args.max_duplicates,
+        country=args.country,
     )

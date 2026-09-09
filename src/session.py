@@ -183,7 +183,7 @@ class SessionManager:
 
         self._checkpoint_path = path
         self._session_checkpoints.append(path)
-        print(f"   [CHECKPOINT] {self.count} ofertas guardadas → {path.name}")
+        print(f"   [CHECKPOINT] {self.count} ofertas guardadas -> {path.name}")
 
         # Limpiar checkpoints viejos (más de RECENT_CHECKPOINT_HOURS horas)
         self._cleanup_old_checkpoints()

@@ -33,10 +33,36 @@ class JobFilter:
         session.add_offer(offer)
     """
 
-    # Palabras en el TÍTULO que indican un puesto claramente no-IT.
+    # Palabras en el TÍTULO que indican un rol tecnológico explícito.
+    # Si están presentes, eximen a la oferta de la blacklist (ej. "Salesforce Developer", "Marketing Data Engineer").
+    IT_EXEMPTION_KEYWORDS: list[str] = [
+        "developer",
+        "desarrollador",
+        "engineer",
+        "ingeniero",
+        "programmer",
+        "programador",
+        "software",
+        "devops",
+        "cloud",
+        "architect",
+        "arquitecto",
+        "data scientist",
+        "data engineer",
+        "científico de datos",
+        "ingeniero de datos",
+        "qa automation",
+        "sre",
+        "full stack",
+        "full-stack",
+        "frontend",
+        "backend",
+    ]
+
+    # Palabras en el TÍTULO que indican un puesto claramente no-IT (Español, Inglés, Alemán).
     # Se evalúan con `in` sobre title.lower() para capturar variaciones.
     TITLE_BLACKLIST: list[str] = [
-        # Ventas / Comercial
+        # Ventas / Comercial / Business
         "vendedor",
         "ventas",
         "asesor comercial",
@@ -45,7 +71,74 @@ class JobFilter:
         "call center",
         "retenciones",
         "portabilidad",
-        # Logística / Distribución
+        "sales",
+        "vertrieb",
+        "account executive",
+        "business development",
+        "bdr",
+        "sdr",
+        "key account",
+        "inside sales",
+        "kundenberater",
+        "teleoperador",
+        "brand manager",
+        "founder s associate",
+        "founders associate",
+        # Contabilidad / Finanzas / Impuestos
+        "accountant",
+        "accounting",
+        "buchhalter",
+        "bilanzbuchhalter",
+        "anlagenbuchhalter",
+        "finanzbuchhalter",
+        "steuerberater",
+        "steuerfachangestellte",
+        "steuern",
+        "contable",
+        "contador",
+        "contabilidad",
+        "auditor",
+        "auditoría",
+        "auditoria",
+        "wirtschaftsprüfer",
+        "payroll",
+        "nómina",
+        "planillas",
+        "operaciones crediticias",
+        "banking",
+        "controlling",
+        "controller",
+        # Marketing / Social Media / Contenido
+        "marketing",
+        "performance marketing",
+        "online marketing",
+        "social media",
+        "community manager",
+        "content manager",
+        "content creator",
+        "seo",
+        "sem",
+        "copywriter",
+        "redakteur",
+        "online-redakteur",
+        "marktanalyse",
+        # Recursos Humanos / Reclutamiento
+        "recruiter",
+        "recruiting",
+        "talent acquisition",
+        "human resources",
+        "recursos humanos",
+        "personalreferent",
+        "hr manager",
+        "hr specialist",
+        "hr generalist",
+        "people operations",
+        # Logística / Operaciones / Distribución
+        "logistik",
+        "logistics",
+        "warehouse",
+        "lager",
+        "lagerist",
         "vendedor de ruta",
         "vendedor de campo",
         "chofer",
@@ -54,19 +147,31 @@ class JobFilter:
         "mercaderista",
         "ruta",
         "reparto",
-        # Industria / CNC
+        # Legal / Cumplimiento / Salud / Administrativo
+        "legal",
+        "jurist",
+        "anwalt",
+        "abogado",
+        "paralegal",
+        "fincrime",
+        "pflege",
+        "krankenpfleger",
+        "krankentransport",
+        "arzt",
+        "nurse",
+        "content reviewer",
+        "data entry",
+        "digitador",
+        "transcriptor",
+        # Industria / CNC / Inmobiliario
         "cnc",
         "matricero",
         "mecanizado",
         "electrónico industrial",
         "mantenimiento eléctrico",
         "riego",
-        # Inmobiliario / Finanzas no-TI
         "inmobiliario",
-        "planillas",
         "sala ventas",
-        "operaciones crediticias",
-        # Otros no-IT
         "consumo masivo",
         "abarrotes",
         "lácteos",
@@ -89,6 +194,12 @@ class JobFilter:
         "abarrotes",
         "lacteos",
         "estacionamiento",
+        "accountant",
+        "buchhalter",
+        "steuerberater",
+        "marketing",
+        "sales",
+        "recruiter",
     ]
 
     # Mínimo de caracteres en la descripción para considerar la oferta válida.
@@ -109,8 +220,15 @@ class JobFilter:
             False si el título o la URL coinciden con la blacklist.
             True  en caso contrario (puede pasar al detalle).
         """
-        title_lower = title.lower()
-        url_lower = url.lower()
+        title_lower = title.lower().strip()
+        url_lower = url.lower().strip()
+
+        if not title_lower:
+            return False
+
+        # Si el título tiene un rol tecnológico explícito, se acepta
+        if any(kw in title_lower for kw in self.IT_EXEMPTION_KEYWORDS):
+            return True
 
         for word in self.TITLE_BLACKLIST:
             if word in title_lower:

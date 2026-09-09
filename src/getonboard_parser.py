@@ -43,6 +43,10 @@ DEFAULT_CATEGORIES: list[str] = [
     "programming",
     "mobile-developer",
     "sysadmin-devops-qa",
+    "data-science-analytics",
+    "machine-learning-ai",
+    "cybersecurity",
+    "design-ux",
 ]
 
 # Países aceptados para filtrar ofertas (vacías/remote se incluyen siempre)
@@ -103,12 +107,12 @@ class GetOnBoardParser(BaseParser):
         "scikit-learn", "pandas", ".net", "c#", "php", "laravel", "vue", "next.js",
         "flask", "redis", "mysql", "linux", "terraform", "jenkins", "jira", "figma",
         "html", "css", "sass", "graphql", "rest api", "microservicios", "scrum",
-        "agile", "flutter", "dart", "kotlin", "swift", "go", "ruby", "rails",
+        "agile", "flutter", "dart", "kotlin", "swift", "golang", "ruby", "rails",
         "spring boot", "unity", "unreal engine", "blockchain", "solidity",
-        "power bi", "tableau", "excel", "ux/ui", "adobe xd", "kanban", "devops",
+        "power bi", "tableau", "ux/ui", "adobe xd", "kanban", "devops",
         "cybersecurity", "qa", "selenium", "cypress", "jest", "backend", "frontend",
         "fullstack", "cloud computing", "system design", "software engineering",
-        "ios", "android", "kotlin", "swift", "firebase", "react native",
+        "ios", "android", "firebase", "react native",
     ]
 
     SOFT_SKILLS_KEYWORDS = [

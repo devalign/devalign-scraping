@@ -72,9 +72,9 @@ class ComputrabajoParser(BaseParser):
         "scikit-learn", "pandas", ".net", "c#", "php", "laravel", "vue", "next.js",
         "flask", "redis", "mysql", "linux", "terraform", "jenkins", "jira", "figma",
         "html", "css", "sass", "graphql", "rest api", "microservicios", "scrum",
-        "agile", "flutter", "dart", "kotlin", "swift", "go", "ruby", "rails",
+        "agile", "flutter", "dart", "kotlin", "swift", "golang", "ruby", "rails",
         "spring boot", "unity", "unreal engine", "blockchain", "solidity",
-        "power bi", "tableau", "excel", "ux/ui", "adobe xd", "kanban", "devops",
+        "power bi", "tableau", "ux/ui", "adobe xd", "kanban", "devops",
         "cybersecurity", "qa", "selenium", "cypress", "jest", "backend", "frontend",
         "fullstack"
     ]
@@ -96,13 +96,26 @@ class ComputrabajoParser(BaseParser):
         "description": 'div[div-link="oferta"], section.box_border',
     }
 
-    def __init__(self, keyword: str = "desarrollador"):
+    SUPPORTED_COUNTRIES: dict[str, str] = {
+        "pe": "Perú",
+        "co": "Colombia",
+        "mx": "México",
+        "cl": "Chile",
+        "ar": "Argentina",
+    }
+
+    def __init__(self, keyword: str = "desarrollador", country: str = "pe"):
         """
-        Inicializa el parser con una palabra clave de búsqueda específica.
+        Inicializa el parser con una palabra clave de búsqueda y país específico.
         Normaliza espacios a guiones para la URL.
         """
+        self.country = country.lower().strip()
+        if self.country not in self.SUPPORTED_COUNTRIES:
+            raise ValueError(
+                f"País '{country}' no soportado. Opciones: {list(self.SUPPORTED_COUNTRIES.keys())}"
+            )
         normalized = keyword.strip().lower().replace(" ", "-")
-        self.base_url = f"https://pe.computrabajo.com/trabajo-de-{normalized}"
+        self.base_url = f"https://{self.country}.computrabajo.com/trabajo-de-{normalized}"
 
     # ------------------------------------------------------------------
     # Interfaz BaseParser
@@ -172,7 +185,7 @@ class ComputrabajoParser(BaseParser):
             if not href or "/ofertas-de-trabajo/" not in href:
                 continue
             if href.startswith("/"):
-                href = f"https://pe.computrabajo.com{href}"
+                href = f"https://{self.country}.computrabajo.com{href}"
             # Deduplicar por URL (sin fragmento de tracking)
             clean_href = href.split("#")[0]
             if clean_href in seen:
