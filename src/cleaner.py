@@ -96,11 +96,17 @@ class TextCleaner:
         return text
 
     def extract_salary_regex(self, text: str) -> str:
-        """Busca patrones comunes de salarios en el texto crudo."""
+        """Busca patrones comunes de salarios en el texto crudo con soporte multi-moneda LATAM."""
         if not text:
             return ""
-        # Buscar S/. o USD seguido de números (ej. S/ 3000, $ 2.500)
-        match = re.search(r'(S/\.?|\$|USD|EUR)\s*\d{1,3}(?:[.,]\d{3})*(?:\s*-\s*(S/\.?|\$|USD|EUR)?\s*\d{1,3}(?:[.,]\d{3})*)?', text, re.IGNORECASE)
+        # Buscar monedas LATAM seguidas de números (ej. S/ 3000, $ 2.500.000, COP 5'000.000)
+        currency_pattern = r"(?:S/\.?|\$|USD|EUR|COP|MXN|CLP|ARS|PEN)"
+        num_pattern = r"\d{1,3}(?:[.,\']\d{3})*"
+        full_pattern = (
+            rf"{currency_pattern}\s*{num_pattern}"
+            rf"(?:\s*-\s*{currency_pattern}?\s*{num_pattern})?"
+        )
+        match = re.search(full_pattern, text, re.IGNORECASE)
         if match:
             return match.group(0).strip()
         return ""
@@ -110,7 +116,9 @@ class TextCleaner:
         if not text:
             return ""
         # Buscar X+ años, X a Y años, X years
-        match = re.search(r'(\d+)\+?\s*(a\s*\d+)?\s*(años|years)\b', text, re.IGNORECASE)
+        match = re.search(
+            r"(\d+)\+?\s*(a\s*\d+)?\s*(años|years)\b", text, re.IGNORECASE
+        )
         if match:
             return match.group(0).strip()
         return ""
@@ -127,15 +135,15 @@ class TextCleaner:
             Nueva instancia de JobOffer con campos limpiados.
         """
         clean_desc = self.clean_text_field(offer.full_description)
-        
+
         salary = offer.salary.strip()
         if not salary:
             salary = self.extract_salary_regex(clean_desc)
-            
+
         experience = offer.experience_years.strip().lower()
         if not experience:
             experience = self.extract_experience_regex(clean_desc)
-            
+
         return dc_replace(
             offer,
             job_title=self.clean_text_field(offer.job_title),

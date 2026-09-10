@@ -183,7 +183,7 @@ class SessionManager:
 
         self._checkpoint_path = path
         self._session_checkpoints.append(path)
-        print(f"   [CHECKPOINT] {self.count} ofertas guardadas → {path.name}")
+        print(f"   [CHECKPOINT] {self.count} ofertas guardadas -> {path.name}")
 
         # Limpiar checkpoints viejos (más de RECENT_CHECKPOINT_HOURS horas)
         self._cleanup_old_checkpoints()
@@ -249,7 +249,9 @@ class SessionManager:
         self._collected = data.get("offers", [])
 
         print(f"   [RESUME] Cargado checkpoint: {path.name}")
-        print(f"   [RESUME] {self.count} ofertas previas, retomando desde página {self._current_page}")
+        print(
+            f"   [RESUME] {self.count} ofertas previas, retomando desde página {self._current_page}"
+        )
 
     # ------------------------------------------------------------------
     # Guardado final
@@ -289,6 +291,7 @@ class SessionManager:
         # Normalizar a lista de dicts para serialización uniforme
         if self._collected and not isinstance(self._collected[0], dict):
             from dataclasses import asdict as _asdict
+
             records = [_asdict(o) for o in self._collected]
         else:
             records = self._collected

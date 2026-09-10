@@ -1,4 +1,4 @@
-name: Daily Scraper (Parallel Matrix)
+name: Scheduled Scraper (Parallel LATAM Matrix)
 
 on:
   schedule:
@@ -8,12 +8,12 @@ on:
     # Permite ejecución manual desde la interfaz de GitHub
 
 jobs:
-  scrape:
+  scrape-computrabajo:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        site: [computrabajo, getonboard, remotive, arbeitnow, weworkremotely]
+        country: [pe, co, mx, cl, ar]
 
     steps:
       - name: Checkout repository
@@ -30,23 +30,79 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # Solo necesario para computrabajo si decidimos agregarlo luego,
-      # pero lo mantenemos por si agregamos tests con browser.
       - name: Install Playwright browsers
         run: |
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Run scraper para ${{ matrix.site }}
+      - name: Run Computrabajo scraper for ${{ matrix.country }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          # Incrementamos los jobs meta a 500 para aumentar el dataset
-          python scripts/run_scraper.py --site ${{ matrix.site }} --jobs 500 --max-duplicates 20
+          python scripts/scrape_latam_suite.py \
+            --ct-only \
+            --countries ${{ matrix.country }} \
+            --keywords software devops qa datos desarrollador \
+            --jobs-per-batch 100
+
+  scrape-getonboard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run GetOnBoard scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/scrape_latam_suite.py \
+            --gob-only \
+            --jobs-per-batch 150
+
+  scrape-remote:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site: [remotive, weworkremotely]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Remote scraper for ${{ matrix.site }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/run_scraper.py --site ${{ matrix.site }} --jobs 100
 
   trigger_api:
-    needs: scrape
+    needs: [scrape-computrabajo, scrape-getonboard, scrape-remote]
     runs-on: ubuntu-latest
     if: always() # Ejecutar aunque algún scraper de la matrix falle (así se guardan los que funcionaron)
     steps:

@@ -12,7 +12,10 @@ import os
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
+from dotenv import load_dotenv
 from supabase import create_client, Client
+
+load_dotenv()
 
 
 class SupabaseExporter:
@@ -24,6 +27,7 @@ class SupabaseExporter:
     """
 
     def __init__(self):
+        load_dotenv()
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
 
@@ -35,25 +39,43 @@ class SupabaseExporter:
         self.supabase: Client = create_client(url, key)
         self.table_name = "job_offers"
 
-    def get_existing_urls(self, portal_name: str, days_limit: int = 30) -> set[str]:
+    def get_existing_urls(self, portal_name: str, days_limit: int = 90) -> set[str]:
         """
         Consulta las URLs de ofertas ya guardadas en Supabase en los últimos N días,
-        filtrando por portal.
+        filtrando por portal y paginando para sobrepasar el límite de 1000 registros de PostgREST.
 
         Retorna:
             Conjunto de URLs existentes.
         """
-        print(f"[*] Consultando URLs existentes en Supabase para {portal_name} (últimos {days_limit} días)...")
+        print(
+            f"[*] Consultando URLs existentes en Supabase para {portal_name} "
+            f"(últimos {days_limit} días)..."
+        )
         try:
-            since_date = (datetime.now(timezone.utc) - timedelta(days=days_limit)).isoformat()
-            response = (
-                self.supabase.table(self.table_name)
-                .select("source_url")
-                .eq("portal", portal_name)
-                .gte("scraped_at", since_date)
-                .execute()
-            )
-            urls = {row["source_url"] for row in response.data if "source_url" in row}
+            since_date = (
+                datetime.now(timezone.utc) - timedelta(days=days_limit)
+            ).isoformat()
+            urls: set[str] = set()
+            page_size = 1000
+            start = 0
+
+            while True:
+                response = (
+                    self.supabase.table(self.table_name)
+                    .select("source_url")
+                    .eq("portal", portal_name)
+                    .gte("scraped_at", since_date)
+                    .range(start, start + page_size - 1)
+                    .execute()
+                )
+                batch = [
+                    row["source_url"] for row in response.data if "source_url" in row
+                ]
+                urls.update(batch)
+                if len(batch) < page_size:
+                    break
+                start += page_size
+
             print(f"[OK] Se obtuvieron {len(urls)} URLs existentes desde Supabase.")
             return urls
         except Exception as e:
