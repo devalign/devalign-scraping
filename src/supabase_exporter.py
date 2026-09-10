@@ -47,9 +47,14 @@ class SupabaseExporter:
         Retorna:
             Conjunto de URLs existentes.
         """
-        print(f"[*] Consultando URLs existentes en Supabase para {portal_name} (últimos {days_limit} días)...")
+        print(
+            f"[*] Consultando URLs existentes en Supabase para {portal_name} "
+            f"(últimos {days_limit} días)..."
+        )
         try:
-            since_date = (datetime.now(timezone.utc) - timedelta(days=days_limit)).isoformat()
+            since_date = (
+                datetime.now(timezone.utc) - timedelta(days=days_limit)
+            ).isoformat()
             urls: set[str] = set()
             page_size = 1000
             start = 0
@@ -63,7 +68,9 @@ class SupabaseExporter:
                     .range(start, start + page_size - 1)
                     .execute()
                 )
-                batch = [row["source_url"] for row in response.data if "source_url" in row]
+                batch = [
+                    row["source_url"] for row in response.data if "source_url" in row
+                ]
                 urls.update(batch)
                 if len(batch) < page_size:
                     break

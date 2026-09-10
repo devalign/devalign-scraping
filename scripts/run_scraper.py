@@ -2,7 +2,7 @@
 Entry point principal del scraper de ofertas laborales.
 
 Uso:
-    python scripts/run_scraper.py                               # GetOnBoard (default — API, más rápido)
+    python scripts/run_scraper.py                   # GetOnBoard (default: API, más rápido)
     python scripts/run_scraper.py --site computrabajo           # Computrabajo (HTML, Playwright)
     python scripts/run_scraper.py --site getonboard --jobs 100  # GetOnBoard con límite
     python scripts/run_scraper.py --site getonboard --categories programming mobile-developer
@@ -38,19 +38,19 @@ if sys.platform == "win32":
 # Agregar el directorio raíz del proyecto al path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.browser import BrowserManager        # noqa: E402
-from src.cleaner import TextCleaner          # noqa: E402
-from src.getonboard_parser import (
+from src.browser import BrowserManager  # noqa: E402
+from src.cleaner import TextCleaner  # noqa: E402
+from src.getonboard_parser import (  # noqa: E402
     GetOnBoardParser,
     DEFAULT_CATEGORIES as GOB_DEFAULT_CATEGORIES,
 )
-from src.job_filter import JobFilter         # noqa: E402
-from src.parser import ComputrabajoParser    # noqa: E402
-from src.session import SessionManager       # noqa: E402
+from src.job_filter import JobFilter  # noqa: E402
+from src.parser import ComputrabajoParser  # noqa: E402
+from src.session import SessionManager  # noqa: E402
 from src.supabase_exporter import SupabaseExporter  # noqa: E402
-from src.remotive_parser import RemotiveParser      # noqa: E402
-from src.arbeitnow_parser import ArbeitnowParser    # noqa: E402
-from src.weworkremotely_parser import WeworkremotelyParser # noqa: E402
+from src.remotive_parser import RemotiveParser  # noqa: E402
+from src.arbeitnow_parser import ArbeitnowParser  # noqa: E402
+from src.weworkremotely_parser import WeworkremotelyParser  # noqa: E402
 
 # Cargar .env si existe
 load_dotenv()
@@ -101,7 +101,13 @@ def parse_args():
         "--site",
         type=str,
         default=DEFAULT_SITE,
-        choices=["computrabajo", "getonboard", "remotive", "arbeitnow", "weworkremotely"],
+        choices=[
+            "computrabajo",
+            "getonboard",
+            "remotive",
+            "arbeitnow",
+            "weworkremotely",
+        ],
         help=f"Portal de empleo a scrapear (default: {DEFAULT_SITE})",
     )
     parser.add_argument(
@@ -157,7 +163,7 @@ def parse_args():
         "--max-duplicates",
         type=int,
         default=10,
-        help="Límite de duplicados consecutivos antes de detener el scraping (parada temprana; default: 10)",
+        help="Límite de duplicados consecutivos antes de detener el scraping (default: 10)",
     )
     parser.add_argument(
         "--output",
@@ -194,12 +200,12 @@ def _build_parser(
         return ArbeitnowParser()
     elif site == "weworkremotely":
         return WeworkremotelyParser()
-    
+
     if term == "custom-url" and base_url_override:
         parser = ComputrabajoParser(country=country)
         parser.base_url = base_url_override
         return parser
-        
+
     return ComputrabajoParser(keyword=term, country=country)
 
 
@@ -217,6 +223,7 @@ def _prompt_resume() -> bool:
     # Leer metadata del checkpoint sin cargarlo completo
     try:
         import json
+
         with open(checkpoint, encoding="utf-8") as f:
             data = json.load(f)
         meta = data.get("metadata", {})
@@ -273,7 +280,7 @@ def run(
         if site == "computrabajo"
         else (base_url != SITE_DEFAULTS.get(site, ""))
     )
-    
+
     if site == "getonboard":
         terms = categories or GOB_DEFAULT_CATEGORIES
     elif site == "remotive":
@@ -323,7 +330,7 @@ def run(
     print(f"{'-' * 50}")
 
     # ── GetOnBoard usa API REST; no abrimos Playwright ─────────────────
-    needs_browser = (site == "computrabajo")
+    needs_browser = site == "computrabajo"
 
     # ── Loop principal ─────────────────────────────────────────────────
     try:
@@ -360,14 +367,18 @@ def run(
                         print(f"   [ERROR] Error al cargar listado: {e}")
                         term_errors += 1
                         if term_errors > 5:
-                            print(f"   [WARN] Demasiados errores consecutivos para el término '{term}'. Pasando al siguiente...")
+                            print(
+                                f"   [WARN] Demasiados errores para '{term}'. "
+                                "Pasando al siguiente..."
+                            )
                             break
                         session.current_page += 1
                         continue
 
                     if not job_entries:
                         print(
-                            f"   [WARN] Sin más resultados para '{term}' en página {session.current_page}."
+                            f"   [WARN] Sin resultados para '{term}' "
+                            f"en página {session.current_page}."
                         )
                         break
 

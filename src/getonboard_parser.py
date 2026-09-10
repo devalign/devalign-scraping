@@ -101,28 +101,110 @@ class GetOnBoardParser(BaseParser):
 
     # Diccionarios de referencia para clasificación (compartidos con ComputrabajoParser)
     HARD_SKILLS_KEYWORDS = [
-        "python", "java", "javascript", "typescript", "react", "angular", "node",
-        "django", "fastapi", "sql", "postgresql", "mongodb", "docker", "kubernetes",
-        "aws", "gcp", "azure", "git", "ci/cd", "machine learning", "tensorflow",
-        "scikit-learn", "pandas", ".net", "c#", "php", "laravel", "vue", "next.js",
-        "flask", "redis", "mysql", "linux", "terraform", "jenkins", "jira", "figma",
-        "html", "css", "sass", "graphql", "rest api", "microservicios", "scrum",
-        "agile", "flutter", "dart", "kotlin", "swift", "golang", "ruby", "rails",
-        "spring boot", "unity", "unreal engine", "blockchain", "solidity",
-        "power bi", "tableau", "ux/ui", "adobe xd", "kanban", "devops",
-        "cybersecurity", "qa", "selenium", "cypress", "jest", "backend", "frontend",
-        "fullstack", "cloud computing", "system design", "software engineering",
-        "ios", "android", "firebase", "react native",
+        "python",
+        "java",
+        "javascript",
+        "typescript",
+        "react",
+        "angular",
+        "node",
+        "django",
+        "fastapi",
+        "sql",
+        "postgresql",
+        "mongodb",
+        "docker",
+        "kubernetes",
+        "aws",
+        "gcp",
+        "azure",
+        "git",
+        "ci/cd",
+        "machine learning",
+        "tensorflow",
+        "scikit-learn",
+        "pandas",
+        ".net",
+        "c#",
+        "php",
+        "laravel",
+        "vue",
+        "next.js",
+        "flask",
+        "redis",
+        "mysql",
+        "linux",
+        "terraform",
+        "jenkins",
+        "jira",
+        "figma",
+        "html",
+        "css",
+        "sass",
+        "graphql",
+        "rest api",
+        "microservicios",
+        "scrum",
+        "agile",
+        "flutter",
+        "dart",
+        "kotlin",
+        "swift",
+        "golang",
+        "ruby",
+        "rails",
+        "spring boot",
+        "unity",
+        "unreal engine",
+        "blockchain",
+        "solidity",
+        "power bi",
+        "tableau",
+        "ux/ui",
+        "adobe xd",
+        "kanban",
+        "devops",
+        "cybersecurity",
+        "qa",
+        "selenium",
+        "cypress",
+        "jest",
+        "backend",
+        "frontend",
+        "fullstack",
+        "cloud computing",
+        "system design",
+        "software engineering",
+        "ios",
+        "android",
+        "firebase",
+        "react native",
     ]
 
     SOFT_SKILLS_KEYWORDS = [
-        "comunicación", "trabajo en equipo", "liderazgo", "proactivo",
-        "resolución de problemas", "adaptabilidad", "gestión del tiempo",
-        "creatividad", "orientado a resultados", "colaboración",
-        "pensamiento crítico", "negociación", "empatía", "autonomía",
-        "responsabilidad", "organización", "atención al detalle",
-        "tolerancia a la frustración", "capacidad de análisis", "aprendizaje rápido",
-        "communication", "teamwork", "leadership",
+        "comunicación",
+        "trabajo en equipo",
+        "liderazgo",
+        "proactivo",
+        "resolución de problemas",
+        "adaptabilidad",
+        "gestión del tiempo",
+        "creatividad",
+        "orientado a resultados",
+        "colaboración",
+        "pensamiento crítico",
+        "negociación",
+        "empatía",
+        "autonomía",
+        "responsabilidad",
+        "organización",
+        "atención al detalle",
+        "tolerancia a la frustración",
+        "capacidad de análisis",
+        "aprendizaje rápido",
+        "communication",
+        "teamwork",
+        "leadership",
     ]
 
     def __init__(
@@ -299,11 +381,13 @@ class GetOnBoardParser(BaseParser):
         combined_lower = f"{' '.join(tag_lower)} {desc_lower}"
 
         offer.hard_skills = [
-            s for s in self.HARD_SKILLS_KEYWORDS
+            s
+            for s in self.HARD_SKILLS_KEYWORDS
             if re.search(rf"\b{re.escape(s)}\b", combined_lower)
         ]
         offer.soft_skills = [
-            s for s in self.SOFT_SKILLS_KEYWORDS
+            s
+            for s in self.SOFT_SKILLS_KEYWORDS
             if re.search(rf"\b{re.escape(s)}\b", combined_lower)
         ]
 
@@ -363,16 +447,9 @@ class GetOnBoardParser(BaseParser):
             return self._company_cache[company_id]
 
         try:
-            resp = self._session.get(
-                f"{API_BASE}/companies/{company_id}", timeout=10
-            )
+            resp = self._session.get(f"{API_BASE}/companies/{company_id}", timeout=10)
             if resp.status_code == 200:
-                name = (
-                    resp.json()
-                    .get("data", {})
-                    .get("attributes", {})
-                    .get("name", "")
-                )
+                name = resp.json().get("data", {}).get("attributes", {}).get("name", "")
                 self._company_cache[company_id] = name
                 time.sleep(0.5)  # Pequeño delay para no saturar el endpoint
                 return name

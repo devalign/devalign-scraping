@@ -34,7 +34,8 @@ class JobFilter:
     """
 
     # Palabras en el TÍTULO que indican un rol tecnológico explícito.
-    # Si están presentes, eximen a la oferta de la blacklist (ej. "Salesforce Developer", "Marketing Data Engineer").
+    # Si están presentes, eximen a la oferta de la blacklist
+    # (ej. "Salesforce Developer", "Marketing Data Engineer").
     IT_EXEMPTION_KEYWORDS: list[str] = [
         "developer",
         "desarrollador",

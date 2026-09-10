@@ -75,10 +75,10 @@ class BaseParser(ABC):
         """
         import json
         from bs4 import BeautifulSoup
-        
+
         soup = BeautifulSoup(html, "lxml")
         json_ld_scripts = soup.select('script[type="application/ld+json"]')
-        
+
         for script in json_ld_scripts:
             try:
                 data = json.loads(script.string)
@@ -87,4 +87,3 @@ class BaseParser(ABC):
             except (json.JSONDecodeError, TypeError, AttributeError):
                 continue
         return {}
-

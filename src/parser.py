@@ -10,7 +10,6 @@ Nota: `JobParser` es un alias de compatibilidad hacia atrás. Usar `Computrabajo
       en código nuevo.
 """
 
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -39,7 +38,7 @@ class JobOffer:
     education_level: str = ""  # Ej: "universitaria", "técnica", "indiferente"
     full_description: str = ""  # TEXTO ÍNTEGRO — crítico para IA
     source_url: str = ""
-    portal: str = ""              # Ej: "computrabajo", "getonboard"
+    portal: str = ""  # Ej: "computrabajo", "getonboard"
     scraped_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -66,26 +65,100 @@ class ComputrabajoParser(BaseParser):
 
     # Diccionarios de referencia para clasificación semi-automática
     HARD_SKILLS_KEYWORDS = [
-        "python", "java", "javascript", "typescript", "react", "angular", "node",
-        "django", "fastapi", "sql", "postgresql", "mongodb", "docker", "kubernetes",
-        "aws", "gcp", "azure", "git", "ci/cd", "machine learning", "tensorflow",
-        "scikit-learn", "pandas", ".net", "c#", "php", "laravel", "vue", "next.js",
-        "flask", "redis", "mysql", "linux", "terraform", "jenkins", "jira", "figma",
-        "html", "css", "sass", "graphql", "rest api", "microservicios", "scrum",
-        "agile", "flutter", "dart", "kotlin", "swift", "golang", "ruby", "rails",
-        "spring boot", "unity", "unreal engine", "blockchain", "solidity",
-        "power bi", "tableau", "ux/ui", "adobe xd", "kanban", "devops",
-        "cybersecurity", "qa", "selenium", "cypress", "jest", "backend", "frontend",
-        "fullstack"
+        "python",
+        "java",
+        "javascript",
+        "typescript",
+        "react",
+        "angular",
+        "node",
+        "django",
+        "fastapi",
+        "sql",
+        "postgresql",
+        "mongodb",
+        "docker",
+        "kubernetes",
+        "aws",
+        "gcp",
+        "azure",
+        "git",
+        "ci/cd",
+        "machine learning",
+        "tensorflow",
+        "scikit-learn",
+        "pandas",
+        ".net",
+        "c#",
+        "php",
+        "laravel",
+        "vue",
+        "next.js",
+        "flask",
+        "redis",
+        "mysql",
+        "linux",
+        "terraform",
+        "jenkins",
+        "jira",
+        "figma",
+        "html",
+        "css",
+        "sass",
+        "graphql",
+        "rest api",
+        "microservicios",
+        "scrum",
+        "agile",
+        "flutter",
+        "dart",
+        "kotlin",
+        "swift",
+        "golang",
+        "ruby",
+        "rails",
+        "spring boot",
+        "unity",
+        "unreal engine",
+        "blockchain",
+        "solidity",
+        "power bi",
+        "tableau",
+        "ux/ui",
+        "adobe xd",
+        "kanban",
+        "devops",
+        "cybersecurity",
+        "qa",
+        "selenium",
+        "cypress",
+        "jest",
+        "backend",
+        "frontend",
+        "fullstack",
     ]
 
     SOFT_SKILLS_KEYWORDS = [
-        "comunicación", "trabajo en equipo", "liderazgo", "proactivo",
-        "resolución de problemas", "adaptabilidad", "gestión del tiempo",
-        "creatividad", "orientado a resultados", "colaboración",
-        "pensamiento crítico", "negociación", "empatía", "autonomía",
-        "responsabilidad", "organización", "atención al detalle",
-        "tolerancia a la frustración", "capacidad de análisis", "aprendizaje rápido"
+        "comunicación",
+        "trabajo en equipo",
+        "liderazgo",
+        "proactivo",
+        "resolución de problemas",
+        "adaptabilidad",
+        "gestión del tiempo",
+        "creatividad",
+        "orientado a resultados",
+        "colaboración",
+        "pensamiento crítico",
+        "negociación",
+        "empatía",
+        "autonomía",
+        "responsabilidad",
+        "organización",
+        "atención al detalle",
+        "tolerancia a la frustración",
+        "capacidad de análisis",
+        "aprendizaje rápido",
     ]
 
     # Selectores CSS para Computrabajo (Actualizados Mayo 2026)
@@ -115,7 +188,9 @@ class ComputrabajoParser(BaseParser):
                 f"País '{country}' no soportado. Opciones: {list(self.SUPPORTED_COUNTRIES.keys())}"
             )
         normalized = keyword.strip().lower().replace(" ", "-")
-        self.base_url = f"https://{self.country}.computrabajo.com/trabajo-de-{normalized}"
+        self.base_url = (
+            f"https://{self.country}.computrabajo.com/trabajo-de-{normalized}"
+        )
 
     # ------------------------------------------------------------------
     # Interfaz BaseParser
@@ -133,6 +208,7 @@ class ComputrabajoParser(BaseParser):
             Lista de tuplas (url, titulo). Vacía si no hay más resultados.
         """
         import time
+
         url = f"{self.base_url}?p={current_page}"
         page.goto(url, wait_until="domcontentloaded", timeout=15000)
         time.sleep(1)
@@ -151,6 +227,7 @@ class ComputrabajoParser(BaseParser):
             JobOffer con todos los campos disponibles poblados.
         """
         import time
+
         page.goto(url, wait_until="domcontentloaded", timeout=15000)
         time.sleep(1)
         html = page.content()
@@ -173,9 +250,8 @@ class ComputrabajoParser(BaseParser):
         """
         soup = BeautifulSoup(html, "lxml")
         # Intentar varios selectores de links por si cambia la clase
-        links = (
-            soup.select(self.SELECTORS["listing_links"])
-            or soup.select("article a.tw-block")
+        links = soup.select(self.SELECTORS["listing_links"]) or soup.select(
+            "article a.tw-block"
         )
         seen: set[str] = set()
         entries: list[tuple[str, str]] = []
@@ -203,7 +279,7 @@ class ComputrabajoParser(BaseParser):
         """
         soup = BeautifulSoup(html, "lxml")
         # Normalizar URL quitando fragmentos de tracking (ej. #lc=ListOffers...)
-        clean_url = url.split('#')[0]
+        clean_url = url.split("#")[0]
         offer = JobOffer(source_url=clean_url, portal=self.SITE_NAME)
 
         # 1. Título (Más robusto)
@@ -217,12 +293,18 @@ class ComputrabajoParser(BaseParser):
             # Empresa
             if not offer.company:
                 hiring_org = json_data.get("hiringOrganization", {})
-                offer.company = hiring_org.get("name", "") if isinstance(hiring_org, dict) else hiring_org
+                offer.company = (
+                    hiring_org.get("name", "")
+                    if isinstance(hiring_org, dict)
+                    else hiring_org
+                )
             # Ubicación
             if not offer.location:
                 loc = json_data.get("jobLocation", {}).get("address", {})
                 if isinstance(loc, dict):
-                    address = f"{loc.get('addressLocality', '')}, {loc.get('addressRegion', '')}".strip(", ")
+                    locality = loc.get("addressLocality", "")
+                    region = loc.get("addressRegion", "")
+                    address = f"{locality}, {region}".strip(", ")
                     offer.location = address
             # Salario
             if not offer.salary:
@@ -240,27 +322,36 @@ class ComputrabajoParser(BaseParser):
                 exp = json_data.get("experienceRequirements", {})
                 if isinstance(exp, dict) and exp.get("monthsOfExperience"):
                     months = int(exp.get("monthsOfExperience", 0))
-                    offer.experience_years = f"{months // 12} years" if months >= 12 else f"{months} months"
+                    offer.experience_years = (
+                        f"{months // 12} years" if months >= 12 else f"{months} months"
+                    )
                 elif isinstance(exp, str):
                     offer.experience_years = exp
 
         # PRIORIDAD 2: "Acerca de" (Súper fiable si existe)
         if not offer.company or len(offer.company) < 3:
-            for h2 in soup.find_all('h2'):
+            for h2 in soup.find_all("h2"):
                 h2_text = h2.get_text(" ", strip=True)
-                if 'Acerca de' in h2_text:
-                    company_name = h2_text.replace('Acerca de', '').strip()
-                    company_name = company_name.replace('\xa0', ' ').strip()
-                    if company_name and not any(x in company_name for x in ["Buscar", "Evaluaciones", "Ver todas"]):
+                if "Acerca de" in h2_text:
+                    company_name = h2_text.replace("Acerca de", "").strip()
+                    company_name = company_name.replace("\xa0", " ").strip()
+                    if company_name and not any(
+                        x in company_name
+                        for x in ["Buscar", "Evaluaciones", "Ver todas"]
+                    ):
                         offer.company = company_name
                         break
 
         # PRIORIDAD 3: Selectores de Sidebar (Si aún no tenemos empresa)
         if not offer.company or "Buscar" in offer.company:
-            sidebar = soup.select_one('div.box_border.pAll.tc, section.box_border, div.box_resume')
+            sidebar = soup.select_one(
+                "div.box_border.pAll.tc, section.box_border, div.box_resume"
+            )
             if sidebar:
-                comp_tag = sidebar.select_one('p.fs16.fwB, a.fwB')
-                if comp_tag and not any(x in comp_tag.text for x in ["Ver todas", "Evaluaciones"]):
+                comp_tag = sidebar.select_one("p.fs16.fwB, a.fwB")
+                if comp_tag and not any(
+                    x in comp_tag.text for x in ["Ver todas", "Evaluaciones"]
+                ):
                     offer.company = comp_tag.get_text(strip=True)
 
         # PRIORIDAD 4: Limpieza de texto en el Header (Debajo del H1)
@@ -270,26 +361,29 @@ class ComputrabajoParser(BaseParser):
                 # Intentamos sacar la empresa de un link de empresa
                 for a in header_info.select('a[href*="/empresas/"]'):
                     txt = a.get_text(strip=True)
-                    if txt and not any(x in txt for x in ["Buscar", "Evaluaciones", "Ver todas"]):
+                    if txt and not any(
+                        x in txt for x in ["Buscar", "Evaluaciones", "Ver todas"]
+                    ):
                         offer.company = txt
                         break
-                
+
                 # Análisis de texto plano en el header (excluyendo el H1 e iconos para evitar ruido)
-                header_copy = BeautifulSoup(str(header_info), 'html.parser')
-                if header_copy.h1: header_copy.h1.decompose()
+                header_copy = BeautifulSoup(str(header_info), "html.parser")
+                if header_copy.h1:
+                    header_copy.h1.decompose()
                 # Eliminar iconos
                 for icon in header_copy.select('.icon, i, span[class*="icon"]'):
                     icon.decompose()
-                
+
                 txt_full = header_copy.get_text(" | ", strip=True)
-                
+
                 # Si hay guion " - ", suele ser "Empresa - Ubicación"
                 if " - " in txt_full:
                     parts = txt_full.split(" - ")
                     if len(parts) >= 2:
                         potential_loc = parts[-1].split(" | ")[0].strip()
                         potential_comp = parts[0].split(" | ")[-1].strip()
-                        
+
                         # Validamos que no estemos poniendo la ubicación en la empresa
                         if not offer.location:
                             offer.location = potential_loc
@@ -299,8 +393,10 @@ class ComputrabajoParser(BaseParser):
                     # Formato "Empresa | Ubicación"
                     parts = txt_full.split(" | ")
                     if len(parts) >= 2:
-                        if not offer.company: offer.company = parts[0].strip()
-                        if not offer.location: offer.location = parts[1].strip()
+                        if not offer.company:
+                            offer.company = parts[0].strip()
+                        if not offer.location:
+                            offer.location = parts[1].strip()
 
         # PRIORIDAD 4: "Acerca de" (Súper fiable si existe)
         # (Ya cubierto arriba en Prioridad 2, pero dejamos fallback si se saltó)
@@ -314,7 +410,11 @@ class ComputrabajoParser(BaseParser):
 
         # PRIORIDAD 5: Limpieza Final y Validaciones
         if offer.company:
-            offer.company = offer.company.replace("Empresa garantizada", "").replace("Confidencial", "").strip()
+            offer.company = (
+                offer.company.replace("Empresa garantizada", "")
+                .replace("Confidencial", "")
+                .strip()
+            )
             # Si la empresa es igual al título del trabajo, probablemente es un error de parseo
             if offer.company.lower() == offer.job_title.lower():
                 offer.company = ""
@@ -334,11 +434,15 @@ class ComputrabajoParser(BaseParser):
                         rem = parts[1].split(" - ")
                         if len(rem) > 1:
                             offer.company = rem[0].strip()
-                            if not offer.location: offer.location = rem[1].strip()
+                            if not offer.location:
+                                offer.location = rem[1].strip()
                         else:
                             # Si no hay guion, es arriesgado, pero intentamos
                             potential = rem[0].strip()
-                            if not any(x in potential.lower() for x in ["lima", "peru", "arequipa"]):
+                            if not any(
+                                x in potential.lower()
+                                for x in ["lima", "peru", "arequipa"]
+                            ):
                                 offer.company = potential
 
         # Fallback de seguridad para Ubicación
@@ -367,27 +471,30 @@ class ComputrabajoParser(BaseParser):
             if desc_heading and desc_heading.parent:
                 desc_tag = desc_heading.parent
 
-        # LIMPIEZA DE REDUNDANCIA: 
+        # LIMPIEZA DE REDUNDANCIA:
         # Quitamos etiquetas de UI que se repiten (Salario, Modalidad, etc. que ya extrajimos)
         if desc_tag:
-            desc_copy = BeautifulSoup(str(desc_tag), 'html.parser')
-            
+            desc_copy = BeautifulSoup(str(desc_tag), "html.parser")
+
             # 1. Eliminar tags de metadatos (A convenir, Tiempo completo, etc.)
-            for tag in desc_copy.select('span.tag, p.tag, div.tag, .mbB.fs16'):
+            for tag in desc_copy.select("span.tag, p.tag, div.tag, .mbB.fs16"):
                 tag.decompose()
 
             # 2. Obtener texto y limpiar encabezados residuales
             text = desc_copy.get_text(separator="\n", strip=True)
-            text = text.strip()  # Remove any leading whitespace that breaks the ^ anchor
-            
-            # Eliminar "Descripción de la oferta" y variantes (suele estar al inicio pero puede tener caracteres invisibles antes)
+            text = (
+                text.strip()
+            )  # Remove any leading whitespace that breaks the ^ anchor
+
+            # Eliminar "Descripción de la oferta" y variantes
+            # (suele estar al inicio pero puede tener caracteres invisibles antes)
             noise_headers = [
                 r"Descripción de la oferta\s*",
-                r"Descripción\s*\n", # Solo si es un header solitario seguido de salto de línea
+                r"Descripción\s*\n",  # Solo si es un header solitario seguido de salto de línea
             ]
             for pattern in noise_headers:
                 text = re.sub(pattern, "", text, count=1, flags=re.IGNORECASE)
-            
+
             offer.full_description = text.strip()
         else:
             offer.full_description = ""
@@ -395,7 +502,7 @@ class ComputrabajoParser(BaseParser):
         # Salario, Modalidad y Fecha (Extracción por texto)
         # Computrabajo suele poner estos datos en etiquetas p o span con iconos
         all_text = soup.get_text(separator=" ", strip=True)
-        
+
         # Salario (Extracción por texto y por tags)
         # Buscamos en los tags, pero preferimos los que tienen montos (S/)
         found_placeholder = False
@@ -406,13 +513,16 @@ class ComputrabajoParser(BaseParser):
                 break
             if "A convenir" in t_txt:
                 found_placeholder = True
-        
+
         if not offer.salary or "A convenir" in offer.salary:
-            # Regex mejorada: 
+            # Regex mejorada:
             # 1. Busca S/ seguido de números
             # 2. Permite texto intermedio corto (como "más", "movilidad", "+")
             # Ejemplo: "S/ 1130 + Movilidad S/ 300"
-            salary_pattern = r"S/[.\s]*\d+(?:[.,\s]\d+)*(?:\s*[^0-9]{1,20}\s*S/[.\s]*\d+(?:[.,\s]\d+)*)*"
+            num_grp = r"\d+(?:[.,\s]\d+)*"
+            salary_pattern = (
+                rf"S/[.\s]*{num_grp}(?:\s*[^0-9]{{1,20}}\s*S/[.\s]*{num_grp})*"
+            )
             salary_match = re.search(salary_pattern, all_text)
             if salary_match:
                 offer.salary = salary_match.group(0).strip()
@@ -435,14 +545,16 @@ class ComputrabajoParser(BaseParser):
 
         # Extracción semi-automática de skills desde la descripción con word boundaries
         desc_lower = offer.full_description.lower()
-        
+
         # Usamos regex para asegurar que sean palabras completas (evita "react" en "reactivar")
         offer.hard_skills = [
-            s for s in self.HARD_SKILLS_KEYWORDS 
+            s
+            for s in self.HARD_SKILLS_KEYWORDS
             if re.search(rf"\b{re.escape(s)}\b", desc_lower)
         ]
         offer.soft_skills = [
-            s for s in self.SOFT_SKILLS_KEYWORDS 
+            s
+            for s in self.SOFT_SKILLS_KEYWORDS
             if re.search(rf"\b{re.escape(s)}\b", desc_lower)
         ]
 

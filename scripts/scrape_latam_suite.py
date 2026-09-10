@@ -44,9 +44,9 @@ if sys.platform == "win32":
 # Agregar raíz al path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from scripts.run_scraper import run, SITE_DEFAULTS
-from src.getonboard_parser import DEFAULT_CATEGORIES as GOB_CATEGORIES
-from src.parser import ComputrabajoParser
+from scripts.run_scraper import run, SITE_DEFAULTS  # noqa: E402
+from src.getonboard_parser import DEFAULT_CATEGORIES as GOB_CATEGORIES  # noqa: E402
+from src.parser import ComputrabajoParser  # noqa: E402
 
 COMPUTRABAJO_COUNTRIES = ["pe", "co", "mx", "cl", "ar"]
 COMPUTRABAJO_KEYWORDS = ["desarrollador", "software", "devops", "qa", "datos"]
@@ -112,7 +112,12 @@ def main():
     print("=" * 65)
     print("      DEVALIGN — SUITE DE RECOLECCIÓN LATAM 100% TECH")
     print("=" * 65)
-    print(f"Modo: {'GetOnBoard only' if args.gob_only else 'Computrabajo only' if args.ct_only else 'Full Suite (GOB + CT)'}")
+    mode_str = (
+        "GetOnBoard only"
+        if args.gob_only
+        else "Computrabajo only" if args.ct_only else "Full Suite (GOB + CT)"
+    )
+    print(f"Modo: {mode_str}")
     print(f"Países Computrabajo: {args.countries}")
     print(f"Keywords CT: {args.keywords}")
     print(f"Meta por batch: {args.jobs_per_batch}")
@@ -141,7 +146,10 @@ def main():
             )
         except KeyboardInterrupt:
             print("\n[!] Fase GetOnBoard interrumpida por el usuario.")
-            if input("¿Deseas continuar con Computrabajo? (s/N): ").strip().lower() != "s":
+            if (
+                input("¿Deseas continuar con Computrabajo? (s/N): ").strip().lower()
+                != "s"
+            ):
                 sys.exit(0)
         except Exception as e:
             print(f"[ERROR] Fallo en fase GetOnBoard: {e}")
@@ -155,7 +163,9 @@ def main():
         print("#" * 65)
 
         for country in args.countries:
-            country_name = ComputrabajoParser.SUPPORTED_COUNTRIES.get(country, country.upper())
+            country_name = ComputrabajoParser.SUPPORTED_COUNTRIES.get(
+                country, country.upper()
+            )
             print("\n" + "-" * 60)
             print(f"[*] Procesando Computrabajo — {country_name} [{country.upper()}]")
             print("-" * 60)
@@ -178,7 +188,10 @@ def main():
                 )
             except KeyboardInterrupt:
                 print(f"\n[!] Scraping de {country.upper()} interrumpido.")
-                if input("¿Deseas pasar al siguiente país? (S/n): ").strip().lower() == "n":
+                if (
+                    input("¿Deseas pasar al siguiente país? (S/n): ").strip().lower()
+                    == "n"
+                ):
                     break
             except Exception as e:
                 print(f"[ERROR] Error al procesar {country.upper()}: {e}")

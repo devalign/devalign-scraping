@@ -10,10 +10,7 @@ Estrategia:
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from src.getonboard_parser import GetOnBoardParser, MODALITY_MAP, DEFAULT_CATEGORIES
 from src.parser import JobOffer
@@ -39,7 +36,9 @@ MOCK_JOB_PERU = {
         "company": {"data": {"id": 999, "type": "company"}},
         "perks": [],
     },
-    "links": {"public_url": "https://www.getonbrd.com/jobs/backend-developer-acme-lima"},
+    "links": {
+        "public_url": "https://www.getonbrd.com/jobs/backend-developer-acme-lima"
+    },
 }
 
 MOCK_JOB_REMOTE = {
@@ -83,9 +82,7 @@ MOCK_JOB_CHILE_EXCLUDED = {
         "company": {"data": {"id": 777, "type": "company"}},
         "perks": [],
     },
-    "links": {
-        "public_url": "https://www.getonbrd.com/jobs/qa-engineer-acme-bogota"
-    },
+    "links": {"public_url": "https://www.getonbrd.com/jobs/qa-engineer-acme-bogota"},
 }
 
 MOCK_JOB_HYBRID_LATAM = {
@@ -141,6 +138,7 @@ MOCK_API_RESPONSE = {
 
 # ── Tests: inicialización ───────────────────────────────────────────────────
 
+
 class TestGetOnBoardParserInit:
     def test_default_categories(self):
         parser = GetOnBoardParser()
@@ -161,6 +159,7 @@ class TestGetOnBoardParserInit:
 
 # ── Tests: filtrado por país ────────────────────────────────────────────────
 
+
 class TestCountryFilter:
     def setup_method(self):
         self.parser = GetOnBoardParser()
@@ -176,9 +175,9 @@ class TestCountryFilter:
     def test_accepts_latam_countries(self):
         for country in ["Chile", "Colombia", "Mexico", "Argentina"]:
             attrs = {"countries": [country], "remote": False}
-            assert self.parser._is_country_accepted(attrs) is True, (
-                f"Debería aceptar {country}"
-            )
+            assert (
+                self.parser._is_country_accepted(attrs) is True
+            ), f"Debería aceptar {country}"
 
     def test_accepts_empty_countries(self):
         """Sin restricción de país → global/remoto → se acepta."""
@@ -197,6 +196,7 @@ class TestCountryFilter:
 
 
 # ── Tests: formato de salario ───────────────────────────────────────────────
+
 
 class TestFormatSalary:
     def setup_method(self):
@@ -226,6 +226,7 @@ class TestFormatSalary:
 
 # ── Tests: mapeo de modalidad ───────────────────────────────────────────────
 
+
 class TestModalityMapping:
     def test_fully_remote(self):
         assert MODALITY_MAP["fully_remote"] == "Remoto"
@@ -241,6 +242,7 @@ class TestModalityMapping:
 
 
 # ── Tests: extracción de tags desde HTML ────────────────────────────────────
+
 
 class TestFetchTagsFromHtml:
     def setup_method(self):
@@ -275,7 +277,9 @@ class TestFetchTagsFromHtml:
         assert tags == []
 
     def test_returns_empty_on_network_exception(self):
-        with patch.object(self.parser._session, "get", side_effect=Exception("timeout")):
+        with patch.object(
+            self.parser._session, "get", side_effect=Exception("timeout")
+        ):
             tags = self.parser._fetch_tags_from_html(
                 "https://www.getonbrd.com/jobs/timeout"
             )
@@ -283,6 +287,7 @@ class TestFetchTagsFromHtml:
 
 
 # ── Tests: fetch_and_parse_job ──────────────────────────────────────────────
+
 
 class TestFetchAndParseJob:
     def setup_method(self):
@@ -313,48 +318,65 @@ class TestFetchAndParseJob:
         return side_effect
 
     def test_job_title(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert offer.job_title == "Backend Developer"
 
     def test_salary_formatted(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert offer.salary == "USD 2,000 - 3,500"
 
     def test_modality_onsite(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert offer.modality == "Presencial"
 
     def test_location_peru(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert "Peru" in offer.location
 
     def test_source_url_preserved(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert offer.source_url == self.url
 
     def test_hard_skills_from_tags(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         # Python y Docker son HARD_SKILLS_KEYWORDS
         assert "python" in offer.hard_skills or "docker" in offer.hard_skills
 
     def test_company_resolved(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert offer.company == "ACME Corp"
 
     def test_returns_joboffer_instance(self):
-        with patch.object(self.parser._session, "get", side_effect=self._mock_session()):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert isinstance(offer, JobOffer)
 
 
 # ── Tests: fetch_job_listings ───────────────────────────────────────────────
+
 
 class TestFetchJobListings:
     def setup_method(self):
@@ -425,13 +447,14 @@ class TestFetchJobListings:
     def test_caches_job_data_for_later_parsing(self):
         mock_resp = self._build_api_response([MOCK_JOB_PERU])
         with patch.object(self.parser._session, "get", return_value=mock_resp):
-            entries = self.parser.fetch_job_listings(page=None, current_page=1)
+            _ = self.parser.fetch_job_listings(page=None, current_page=1)
 
         url = MOCK_JOB_PERU["links"]["public_url"]
         assert url in self.parser._job_data_cache
 
 
 # ── Tests: company cache ────────────────────────────────────────────────────
+
 
 class TestCompanyCache:
     def test_caches_after_first_request(self):
@@ -450,9 +473,7 @@ class TestCompanyCache:
 
     def test_returns_empty_string_on_error(self):
         parser = GetOnBoardParser()
-        with patch.object(
-            parser._session, "get", side_effect=Exception("timeout")
-        ):
+        with patch.object(parser._session, "get", side_effect=Exception("timeout")):
             name = parser._resolve_company(12345)
 
         assert name == ""
