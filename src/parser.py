@@ -134,7 +134,7 @@ class ComputrabajoParser(BaseParser):
         """
         import time
         url = f"{self.base_url}?p={current_page}"
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.goto(url, wait_until="domcontentloaded", timeout=15000)
         time.sleep(1)
         html = page.content()
         return self.parse_listing_page(html)
@@ -151,7 +151,7 @@ class ComputrabajoParser(BaseParser):
             JobOffer con todos los campos disponibles poblados.
         """
         import time
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.goto(url, wait_until="domcontentloaded", timeout=15000)
         time.sleep(1)
         html = page.content()
         return self.parse_job_detail(html, url)

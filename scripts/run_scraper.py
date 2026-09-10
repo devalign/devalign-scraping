@@ -87,7 +87,7 @@ def fetch_page(page, url: str) -> str:
     Returns:
         HTML renderizado de la página.
     """
-    page.goto(url, wait_until="networkidle", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=15000)
     time.sleep(1)
     return page.content()
 
@@ -245,6 +245,7 @@ def run(
     keywords: list[str] | None = None,
     max_duplicates: int = 10,
     country: str = "pe",
+    auto_resume: bool = False,
 ):
     """
     Ejecuta el pipeline completo de scraping con resiliencia.
@@ -299,9 +300,11 @@ def run(
         session.preseed_processed_urls(existing_urls)
 
     # ── Detección automática de sesión previa ──────────────────────────
-    if _prompt_resume():
+    should_resume = True if auto_resume else _prompt_resume()
+    if should_resume:
         checkpoint = SessionManager.find_recent_checkpoint()
-        session.load_checkpoint(checkpoint)
+        if checkpoint:
+            session.load_checkpoint(checkpoint)
 
     # ── Signal handler para Ctrl+C / SIGTERM ──────────────────────────
     signal.signal(signal.SIGINT, lambda *_: session.request_shutdown())

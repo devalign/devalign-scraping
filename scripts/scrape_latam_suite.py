@@ -174,6 +174,7 @@ def main():
                     keywords=args.keywords,
                     max_duplicates=args.max_duplicates,
                     country=country,
+                    auto_resume=True,
                 )
             except KeyboardInterrupt:
                 print(f"\n[!] Scraping de {country.upper()} interrumpido.")
