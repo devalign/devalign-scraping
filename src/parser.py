@@ -29,6 +29,7 @@ class JobOffer:
     job_title: str = ""
     company: str = ""
     location: str = ""
+    country: str = ""  # Código ISO-2 (pe, co, mx, cl, ar), 'latam' o ''
     salary: str = ""  # Ej: "S/. 3,500", "A convenir"
     modality: str = ""  # Ej: "Remoto", "Presencial", "Híbrido"
     date_posted: str = ""  # Ej: "Hace 2 días", "Ayer"
@@ -211,7 +212,7 @@ class ComputrabajoParser(BaseParser):
 
         url = f"{self.base_url}?p={current_page}"
         page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        time.sleep(1)
+        time.sleep(1.5)
         html = page.content()
         return self.parse_listing_page(html)
 
@@ -280,7 +281,9 @@ class ComputrabajoParser(BaseParser):
         soup = BeautifulSoup(html, "lxml")
         # Normalizar URL quitando fragmentos de tracking (ej. #lc=ListOffers...)
         clean_url = url.split("#")[0]
-        offer = JobOffer(source_url=clean_url, portal=self.SITE_NAME)
+        offer = JobOffer(
+            source_url=clean_url, portal=self.SITE_NAME, country=self.country
+        )
 
         # 1. Título (Más robusto)
         title_tag = soup.select_one(self.SELECTORS["job_title"])

@@ -345,6 +345,26 @@ class TestFetchAndParseJob:
             offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
         assert "Peru" in offer.location
 
+    def test_country_single_mapped(self):
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
+            offer = self.parser.fetch_and_parse_job(page=None, url=self.url)
+        assert offer.country == "pe"
+
+    def test_country_multi_latam(self):
+        multi_url = "https://www.getonbrd.com/jobs/multi-country"
+        self.parser._job_data_cache[multi_url] = {
+            "attrs": {"title": "Tech Lead", "countries": ["Mexico", "Chile"]},
+            "job_id": 9999,
+        }
+        with patch.object(
+            self.parser._session, "get", side_effect=self._mock_session()
+        ):
+            offer = self.parser.fetch_and_parse_job(page=None, url=multi_url)
+        assert offer.country == "latam"
+        assert offer.location == "Mexico, Chile"
+
     def test_source_url_preserved(self):
         with patch.object(
             self.parser._session, "get", side_effect=self._mock_session()

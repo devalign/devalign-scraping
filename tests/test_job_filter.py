@@ -95,3 +95,96 @@ def test_is_valid_it_job(job_filter):
         ),
     )
     assert not job_filter.is_valid_it_job(no_skills_offer)
+
+
+def test_is_relevant_discards_industrial_quality(job_filter):
+    """Verifica que puestos de calidad industrial/física sean descartados."""
+    assert not job_filter.is_relevant(
+        "Operario control de calidad - Textil", "https://co.computrabajo.com/textil"
+    )
+    assert not job_filter.is_relevant(
+        "Supervisor de Calidad - alimentos", "https://co.computrabajo.com/alimentos"
+    )
+    assert not job_filter.is_relevant(
+        "Inspector de calidad - plasticos", "https://co.computrabajo.com/plasticos"
+    )
+    assert not job_filter.is_relevant(
+        "Químico farmacéutico gestion de la calidad",
+        "https://co.computrabajo.com/farma",
+    )
+    assert not job_filter.is_relevant(
+        "Operario calidad tratamiento agua potable (PTAP)",
+        "https://co.computrabajo.com/ptap",
+    )
+
+
+def test_is_valid_it_job_handles_qa_safeguard(job_filter):
+    """Verifica que 'qa' como única skill solo pase si el título es de software/TI."""
+    # QA con título no-tech -> debe rechazarse
+    non_tech_qa = JobOffer(
+        job_title="Auxiliar de Calidad",
+        source_url="https://co.computrabajo.com/aux-calidad",
+        hard_skills=["qa"],
+        full_description=(
+            "Empresa de manufactura requiere personal para inspección de procesos "
+            "y aseguramiento QA de calidad en planta de producción."
+        ),
+    )
+    assert not job_filter.is_valid_it_job(non_tech_qa)
+
+    # QA con título tech -> debe aceptarse
+    tech_qa = JobOffer(
+        job_title="QA PK Engineer",
+        source_url="https://co.computrabajo.com/qa-pk",
+        hard_skills=["qa"],
+        full_description=(
+            "Buscamos QA PK Engineer con experiencia sólida para diseñar casos de prueba "
+            "automatizados y manuales para plataformas web críticas "
+            "y servicios distribuidos en la nube."
+        ),
+    )
+    assert job_filter.is_valid_it_job(tech_qa)
+
+
+def test_is_relevant_discards_commercial_and_industrial_developers(job_filter):
+    """Verifica descarte de roles comerciales/industriales con desarrollador/programador."""
+    assert not job_filter.is_relevant(
+        "Desarrollador - de Ventas", "https://mx.computrabajo.com/ventas"
+    )
+    assert not job_filter.is_relevant(
+        "Desarrollador de Negocios", "https://mx.computrabajo.com/negocios"
+    )
+    assert not job_filter.is_relevant(
+        "Ejecutivo Desarrollador de Mercado a Canal de Detalle",
+        "https://mx.computrabajo.com/mercado",
+    )
+    assert not job_filter.is_relevant(
+        "Master Scheduler - Programador Maestro",
+        "https://mx.computrabajo.com/scheduler",
+    )
+    assert not job_filter.is_relevant(
+        "Programador de Producción", "https://mx.computrabajo.com/produccion"
+    )
+    assert not job_filter.is_relevant(
+        "Programador CNC - Torno CNC", "https://mx.computrabajo.com/cnc"
+    )
+    assert not job_filter.is_relevant(
+        "Programador de Cirugías", "https://mx.computrabajo.com/cirugias"
+    )
+
+    # Verifica que desarrolladores y programadores TI sigan pasando
+    assert job_filter.is_relevant(
+        "Desarrollador FullStack", "https://mx.computrabajo.com/fullstack"
+    )
+    assert job_filter.is_relevant(
+        "Desarrollador .NET", "https://mx.computrabajo.com/dotnet"
+    )
+    assert job_filter.is_relevant(
+        "Desarrollador Frontend Angular", "https://mx.computrabajo.com/frontend"
+    )
+    assert job_filter.is_relevant(
+        "Programador TI", "https://mx.computrabajo.com/programador-ti"
+    )
+    assert job_filter.is_relevant(
+        "Programador Web", "https://mx.computrabajo.com/programador-web"
+    )

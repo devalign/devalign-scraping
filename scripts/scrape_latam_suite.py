@@ -49,7 +49,7 @@ from src.getonboard_parser import DEFAULT_CATEGORIES as GOB_CATEGORIES  # noqa: 
 from src.parser import ComputrabajoParser  # noqa: E402
 
 COMPUTRABAJO_COUNTRIES = ["pe", "co", "mx", "cl", "ar"]
-COMPUTRABAJO_KEYWORDS = ["desarrollador", "software", "devops", "qa", "datos"]
+COMPUTRABAJO_KEYWORDS = ["desarrollador", "software", "devops", "qa-software", "datos"]
 
 
 def parse_args():
@@ -143,6 +143,7 @@ def main():
                 site="getonboard",
                 categories=GOB_CATEGORIES,
                 max_duplicates=args.max_duplicates,
+                auto_resume=True,
             )
         except KeyboardInterrupt:
             print("\n[!] Fase GetOnBoard interrumpida por el usuario.")
