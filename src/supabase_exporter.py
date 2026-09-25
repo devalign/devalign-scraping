@@ -118,6 +118,10 @@ class SupabaseExporter:
         """
         record["raw_hard_skills"] = record.pop("hard_skills", [])
         record["raw_soft_skills"] = record.pop("soft_skills", [])
+        if not record.get("country"):
+            record["country"] = None
+        else:
+            record["country"] = str(record["country"]).strip().lower()
         return record
 
     def save_dicts(self, records: list[dict]) -> None:
@@ -138,6 +142,10 @@ class SupabaseExporter:
                 r_copy["raw_hard_skills"] = r_copy.pop("hard_skills", [])
             if "soft_skills" in r_copy:
                 r_copy["raw_soft_skills"] = r_copy.pop("soft_skills", [])
+            if not r_copy.get("country"):
+                r_copy["country"] = None
+            else:
+                r_copy["country"] = str(r_copy["country"]).strip().lower()
             mapped_records.append(r_copy)
 
         self._upsert(mapped_records)

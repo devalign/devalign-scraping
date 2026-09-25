@@ -14,9 +14,19 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+
+def _offer_to_dict(item: Any) -> dict:
+    """Normaliza un item de oferta (sea dataclass JobOffer o dict) a dict serializable."""
+    if is_dataclass(item) and not isinstance(item, type):
+        return asdict(item)
+    if isinstance(item, dict):
+        return dict(item)
+    return dict(item)
 
 
 # Directorio donde se almacenan los checkpoints intermedios.
@@ -173,9 +183,10 @@ class SessionManager:
                 "skipped": self._skipped,
                 "filtered": self._filtered,
                 "base_url": self.base_url,
+                "output_file": self.output_file,
             },
             "processed_urls": list(self._processed_urls),
-            "offers": [asdict(o) for o in self._collected],
+            "offers": [_offer_to_dict(o) for o in self._collected],
         }
 
         with open(path, "w", encoding="utf-8") as f:
@@ -205,12 +216,15 @@ class SessionManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def find_recent_checkpoint() -> Path | None:
+    def find_recent_checkpoint(
+        output_file: str | None = None, base_url: str | None = None
+    ) -> Path | None:
         """
         Busca el checkpoint más reciente dentro del límite de horas permitido.
+        Si se pasa output_file o base_url, busca solo checkpoints coincidentes.
 
         Returns:
-            Path al checkpoint más reciente, o None si no hay ninguno válido.
+            Path al checkpoint más reciente coincidente, o None si no hay ninguno válido.
         """
         if not CHECKPOINT_DIR.exists():
             return None
@@ -221,10 +235,24 @@ class SessionManager:
 
         now = datetime.now(timezone.utc).timestamp()
         limit = RECENT_CHECKPOINT_HOURS * 3600
-        latest = checkpoints[0]
 
-        if now - latest.stat().st_mtime <= limit:
-            return latest
+        for ck in checkpoints:
+            if now - ck.stat().st_mtime > limit:
+                continue
+
+            if output_file or base_url:
+                try:
+                    with open(ck, encoding="utf-8") as f:
+                        meta = json.load(f).get("metadata", {})
+                    if output_file and meta.get("output_file") == output_file:
+                        return ck
+                    if base_url and meta.get("base_url") == base_url:
+                        return ck
+                except Exception:
+                    continue
+            else:
+                return ck
+
         return None
 
     def load_checkpoint(self, path: Path) -> None:
@@ -276,25 +304,14 @@ class SessionManager:
             print("\n[!] No se recolectaron ofertas.")
             return
 
+        records = [_offer_to_dict(o) for o in self._collected]
+
         # Supabase
         if exporter:
-            # Si los elementos son dicts (cargados desde checkpoint), los
-            # pasamos directamente; si son dataclasses, los convertimos.
-            if isinstance(self._collected[0], dict):
-                exporter.save_dicts(self._collected)
-            else:
-                exporter.save(self._collected)
+            exporter.save_dicts(records)
 
         # JSON local
         os.makedirs(os.path.dirname(self.output_file) or ".", exist_ok=True)
-
-        # Normalizar a lista de dicts para serialización uniforme
-        if self._collected and not isinstance(self._collected[0], dict):
-            from dataclasses import asdict as _asdict
-
-            records = [_asdict(o) for o in self._collected]
-        else:
-            records = self._collected
 
         with open(self.output_file, "w", encoding="utf-8") as f:
             json.dump(records, f, ensure_ascii=False, indent=2)

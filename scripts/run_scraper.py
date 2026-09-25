@@ -171,6 +171,16 @@ def parse_args():
         default="data/test_run.json",
         help="Ruta para guardar el archivo local de resultados (default: data/test_run.json)",
     )
+    parser.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help="Reanudar automáticamente desde el último checkpoint sin preguntar",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="No reanudar checkpoint previo (iniciar sesión nueva limpia)",
+    )
     return parser.parse_args()
 
 
@@ -209,15 +219,23 @@ def _build_parser(
     return ComputrabajoParser(keyword=term, country=country)
 
 
-def _prompt_resume() -> bool:
+def _prompt_resume(output_file: str | None = None, base_url: str | None = None) -> bool:
     """
     Detecta si hay una sesión previa y pregunta al usuario si desea reanudarla.
 
     Returns:
         True si se debe cargar el checkpoint, False para empezar desde cero.
     """
-    checkpoint = SessionManager.find_recent_checkpoint()
+    checkpoint = SessionManager.find_recent_checkpoint(
+        output_file=output_file, base_url=base_url
+    )
     if not checkpoint:
+        return False
+
+    if not sys.stdin.isatty():
+        print(
+            f"[*] Entorno no-interactivo detectado. Omitiendo checkpoint previo {checkpoint.name}."
+        )
         return False
 
     # Leer metadata del checkpoint sin cargarlo completo
@@ -253,6 +271,7 @@ def run(
     max_duplicates: int = 10,
     country: str = "pe",
     auto_resume: bool = False,
+    no_resume: bool = False,
 ):
     """
     Ejecuta el pipeline completo de scraping con resiliencia.
@@ -307,9 +326,19 @@ def run(
         session.preseed_processed_urls(existing_urls)
 
     # ── Detección automática de sesión previa ──────────────────────────
-    should_resume = True if auto_resume else _prompt_resume()
+    should_resume = (
+        False
+        if no_resume
+        else (
+            True
+            if auto_resume
+            else _prompt_resume(output_file=output_file, base_url=base_url)
+        )
+    )
     if should_resume:
-        checkpoint = SessionManager.find_recent_checkpoint()
+        checkpoint = SessionManager.find_recent_checkpoint(
+            output_file=output_file, base_url=base_url
+        )
         if checkpoint:
             session.load_checkpoint(checkpoint)
 
@@ -345,6 +374,15 @@ def run(
                 print(f"[*] Iniciando búsqueda de término: '{term}'")
                 print(f"{'='*60}")
 
+                # Rotar pestaña para aislar navegación entre términos
+                if needs_browser and page:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                    page = context.new_page()
+                    time.sleep(random.uniform(1.5, 3.0))
+
                 parser = _build_parser(
                     site,
                     term,
@@ -376,11 +414,41 @@ def run(
                         continue
 
                     if not job_entries:
-                        print(
-                            f"   [WARN] Sin resultados para '{term}' "
-                            f"en página {session.current_page}."
-                        )
-                        break
+                        # Si es página 1 y viene vacía, verificar si Cloudflare bloqueó
+                        if needs_browser and page and session.current_page == 1:
+                            page_title = page.title().lower()
+                            if any(
+                                token in page_title
+                                for token in (
+                                    "just a moment",
+                                    "cloudflare",
+                                    "attention required",
+                                    "challenge",
+                                )
+                            ):
+                                print(
+                                    f"   [WARN] Desafío Cloudflare ('{page.title()}').\n"
+                                    "   Rotando pestaña y reintentando..."
+                                )
+                                time.sleep(random.uniform(5.0, 8.0))
+                                try:
+                                    page.close()
+                                except Exception:
+                                    pass
+                                page = context.new_page()
+                                try:
+                                    job_entries = parser.fetch_job_listings(
+                                        page, session.current_page
+                                    )
+                                except Exception:
+                                    job_entries = []
+
+                        if not job_entries:
+                            print(
+                                f"   [WARN] Sin resultados para '{term}' "
+                                f"en página {session.current_page}."
+                            )
+                            break
 
                     print(f"   [#] {len(job_entries)} vacantes encontradas")
                     term_early_stop = False
@@ -487,4 +555,6 @@ if __name__ == "__main__":
         keywords=args.keywords,
         max_duplicates=args.max_duplicates,
         country=args.country,
+        auto_resume=args.auto_resume,
+        no_resume=args.no_resume,
     )

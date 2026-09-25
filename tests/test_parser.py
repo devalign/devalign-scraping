@@ -159,6 +159,17 @@ class TestParseJobDetail:
         assert offer.scraped_at  # No vacío
         assert "T" in offer.scraped_at  # Formato ISO
 
+    def test_extracts_country(self, parser):
+        offer = parser.parse_job_detail(DETAIL_HTML, "https://example.com/job/1")
+        assert offer.country == "pe"
+
+    def test_respects_custom_country(self):
+        co_parser = ComputrabajoParser(country="co")
+        offer = co_parser.parse_job_detail(
+            DETAIL_HTML, "https://co.computrabajo.com/job/1"
+        )
+        assert offer.country == "co"
+
 
 class TestJobOfferDataclass:
     """Tests para el dataclass JobOffer."""

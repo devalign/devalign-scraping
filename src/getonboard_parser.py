@@ -67,6 +67,18 @@ MODALITY_MAP: dict[str, str] = {
     "onsite": "Presencial",
 }
 
+# Mapeo de países de GetOnBoard → código ISO-2 normalizado
+GOB_COUNTRY_MAP: dict[str, str] = {
+    "chile": "cl",
+    "colombia": "co",
+    "peru": "pe",
+    "perú": "pe",
+    "mexico": "mx",
+    "méxico": "mx",
+    "argentina": "ar",
+    "uruguay": "uy",
+}
+
 # Delay entre requests a la API (anti-abuse; la API es pública pero amable)
 REQUEST_DELAY_SECS: float = 1.0
 
@@ -345,6 +357,12 @@ class GetOnBoardParser(BaseParser):
         # ── 3. Ubicación / Países ─────────────────────────────────────────
         countries: list[str] = attrs.get("countries", [])
         offer.location = ", ".join(countries) if countries else "Remoto"
+        if len(countries) > 1:
+            offer.country = "latam"
+        elif len(countries) == 1:
+            offer.country = GOB_COUNTRY_MAP.get(countries[0].lower().strip(), "")
+        else:
+            offer.country = ""
 
         # ── 4. Salario ────────────────────────────────────────────────────
         offer.salary = self._format_salary(attrs)
