@@ -1,67 +1,56 @@
 """
-Interfaz base (Abstract Base Class) para parsers de portales de empleo.
+Interfaz base (Abstract Base Class) y clases especializadas para parsers de empleo.
 
-Define el contrato que deben cumplir todos los parsers del proyecto.
-Cada parser implementa su propia estrategia de extracción (Patrón Strategy).
-
-Parsers disponibles:
-    - ComputrabajoParser : HTML scraping con Playwright + BeautifulSoup
-    - GetOnBoardParser   : API REST pública (sin browser) + requests
+Define los contratos para:
+- BaseParser: Interfaz raíz para todos los parsers.
+- BrowserParser: Para portales con renderizado JS vía Playwright (ej. Computrabajo).
+- HttpParser: Para portales API REST o RSS con sesión HTTP persistente (ej. GetOnBoard).
 """
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
+from typing import Optional
+
+import requests
+from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
+
+from src.models import JobOffer
 
 
 class BaseParser(ABC):
     """
-    Interfaz abstracta para parsers de portales de empleo.
-
-    Cada subclase implementa la lógica específica de extracción para un portal.
-    El orquestador (`run_scraper.py`) trabaja exclusivamente con esta interfaz.
-
-    Convención de firma:
-        - `page` es la instancia de Playwright Page activa. Para parsers basados
-          en API (ej. GetOnBoardParser), este argumento se recibe pero se ignora.
+    Interfaz abstracta raíz para parsers de portales de empleo.
     """
 
-    # Identificador único del portal (ej. "computrabajo", "getonboard").
-    # Usado en logs, checkpoints y argumentos de CLI.
     SITE_NAME: str = ""
-
-    # URL base predeterminada del portal.
     DEFAULT_BASE_URL: str = ""
+    requires_browser: bool = False
 
     @abstractmethod
-    def fetch_job_listings(self, page, current_page: int) -> list[tuple[str, str]]:
+    def fetch_job_listings(self, current_page: int, page=None) -> list[tuple[str, str]]:
         """
         Obtiene la lista de ofertas de una página de resultados.
 
-        Para parsers HTML: navega con `page` y parsea el HTML.
-        Para parsers API:  realiza una llamada HTTP REST e ignora `page`.
-
         Args:
-            page:         Instancia de Playwright Page (puede ser None para API parsers).
             current_page: Número de página (1-indexed).
+            page:         Instancia de Playwright Page (opcional, solo para BrowserParser).
 
         Returns:
             Lista de tuplas (url_completa, titulo_visible).
-            Lista vacía si no hay más resultados.
         """
 
     @abstractmethod
-    def fetch_and_parse_job(self, page, url: str) -> object:
+    def fetch_and_parse_job(self, url: str, page=None) -> JobOffer:
         """
-        Navega o fetcha una oferta individual y retorna un JobOffer poblado.
-
-        Para parsers HTML: navega con `page` al `url` y parsea el HTML.
-        Para parsers API:  realiza una llamada HTTP al `url` y parsea el HTML
-                           solo para datos no disponibles en la API (ej. tags).
+        Fetcha y parsea una oferta individual y retorna un JobOffer poblado.
 
         Args:
-            page: Instancia de Playwright Page (puede ser None para API parsers).
             url:  URL pública de la oferta.
+            page: Instancia de Playwright Page (opcional, solo para BrowserParser).
 
         Returns:
             Instancia de JobOffer con todos los campos disponibles poblados.
@@ -71,11 +60,8 @@ class BaseParser(ABC):
     def extract_from_json_ld(html: str) -> dict:
         """
         Extrae y parsea el primer bloque application/ld+json que sea de tipo JobPosting.
-        Retorna un diccionario con los datos estructurados o un diccionario vacío si falla.
+        Retorna un diccionario con los datos estructurados o vacío si falla.
         """
-        import json
-        from bs4 import BeautifulSoup
-
         soup = BeautifulSoup(html, "lxml")
         json_ld_scripts = soup.select('script[type="application/ld+json"]')
 
@@ -87,3 +73,58 @@ class BaseParser(ABC):
             except (json.JSONDecodeError, TypeError, AttributeError):
                 continue
         return {}
+
+
+class BrowserParser(BaseParser):
+    """
+    Clase base para parsers que dependen de un navegador real (Playwright).
+    """
+
+    requires_browser: bool = True
+
+    def __init__(self):
+        self.page = None
+
+    def set_page(self, page) -> None:
+        """Asigna la página de Playwright activa."""
+        self.page = page
+
+
+class HttpParser(BaseParser):
+    """
+    Clase base para parsers que operan sobre APIs REST o feeds RSS vía HTTP puro.
+    Implementa sesión persistente (connection pooling) y reintentos exponenciales.
+    """
+
+    requires_browser: bool = False
+
+    def __init__(
+        self,
+        headers: Optional[dict[str, str]] = None,
+        timeout: int = 15,
+        max_retries: int = 3,
+    ):
+        self.timeout = timeout
+        self.session = requests.Session()
+
+        if headers:
+            self.session.headers.update(headers)
+
+        # Configurar reintentos automáticos para códigos transitorios
+        retries = Retry(
+            total=max_retries,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "HEAD"],
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=20)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
+    def close(self) -> None:
+        """Cierra la sesión HTTP persistente."""
+        try:
+            self.session.close()
+        except Exception:
+            pass

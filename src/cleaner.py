@@ -1,61 +1,54 @@
 """
-Pipeline de limpieza de texto para NLP/ML.
+Pipeline de limpieza y normalización de texto para NLP/ML.
 
-Principio: limpiar ruido, NUNCA perder contexto semántico.
-Cada método de limpieza es independiente y componible.
+Principio: Limpiar ruido sintáctico y de codificación, preservando
+estrictamente el contexto semántico de la vacante.
 """
 
-import re
+from __future__ import annotations
 
-import ftfy
-import html2text
+import re
 from dataclasses import replace as dc_replace
+import ftfy
+
+from src.models import JobOffer
 
 
 class TextCleaner:
     """
-    Pipeline de limpieza encadenada para textos de ofertas laborales.
-
-    Aplica transformaciones en orden:
+    Pipeline de saneamiento encadenado para textos de ofertas laborales:
     1. fix_encoding — Repara unicode roto (mojibake)
-    2. remove_html_artifacts — Elimina etiquetas residuales
-    3. remove_noise_patterns — URLs, chars raros, IDs largos
-    4. normalize_whitespace — Colapsa espacios múltiples
+    2. remove_html_artifacts — Elimina etiquetas residuales y entidades HTML
+    3. remove_noise_patterns — URLs, artefactos de UI y secuencias numéricas de ruido
+    4. normalize_whitespace — Colapsa espacios y saltos de línea excesivos
     """
 
-    def __init__(self):
-        self.h2t = html2text.HTML2Text()
-        self.h2t.ignore_links = True
-        self.h2t.ignore_images = True
-        self.h2t.body_width = 0  # Sin saltos de línea artificiales
-
     def fix_encoding(self, text: str) -> str:
-        """ftfy repara: â€™ → ', Ã³ → ó, caracteres mojibake."""
+        """Repara mojibake: â€™ → ', Ã³ → ó, etc."""
         return ftfy.fix_text(text)
 
     def remove_html_artifacts(self, text: str) -> str:
-        """Elimina etiquetas HTML residuales y entidades."""
+        """Elimina etiquetas HTML residuales y entidades comunes."""
         text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"&[a-zA-Z]+;", " ", text)  # &nbsp; &amp; etc.
+        text = re.sub(r"&[a-zA-Z]+;", " ", text)
         return text
 
     def normalize_whitespace(self, text: str) -> str:
-        """Colapsa espacios múltiples y normaliza saltos de línea."""
+        """Colapsa espacios múltiples y limita saltos de línea a máximo 2."""
         text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)  # Máximo 2 saltos seguidos
+        text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
 
     def remove_noise_patterns(self, text: str) -> str:
-        """Elimina patrones que no aportan valor semántico."""
+        """Elimina URLs, números largos de control y texto residual de UI."""
         patterns = [
-            r"http\S+",  # URLs
-            r"[^\w\s\.,;:()/\-+#áéíóúüñÁÉÍÓÚÜÑ]",  # Chars raros, preserva español
-            r"\b\d{9,}\b",  # Números muy largos (IDs, teléfonos)
+            r"http\S+",
+            r"[^\w\s\.,;:()/\-+#áéíóúüñÁÉÍÓÚÜÑ]",
+            r"\b\d{9,}\b",
         ]
         for p in patterns:
             text = re.sub(p, " ", text)
 
-        # Limpiar textos residuales de UI específicos de Computrabajo
         ui_noise = [
             "Ocultaste esta oferta, pulsa",
             "Recuperar oferta",
@@ -76,11 +69,8 @@ class TextCleaner:
 
         return text
 
-    def clean_skills_list(self, skills: list) -> list:
-        """
-        Limpia y normaliza la lista de habilidades, eliminando duplicados
-        y retornando una lista de Python limpia (que se mapea a ARRAY en Postgres).
-        """
+    def clean_skills_list(self, skills: list[str]) -> list[str]:
+        """Limpia, normaliza a minúsculas, deduplica y ordena la lista de habilidades."""
         if not skills:
             return []
         return sorted(list(set(s.lower().strip() for s in skills if s.strip())))
@@ -96,12 +86,11 @@ class TextCleaner:
         return text
 
     def extract_salary_regex(self, text: str) -> str:
-        """Busca patrones comunes de salarios en el texto crudo con soporte multi-moneda LATAM."""
+        """Busca patrones de salarios en el texto crudo con soporte multi-moneda LATAM."""
         if not text:
             return ""
-        # Buscar monedas LATAM seguidas de números (ej. S/ 3000, $ 2.500.000, COP 5'000.000)
         currency_pattern = r"(?:S/\.?|\$|USD|EUR|COP|MXN|CLP|ARS|PEN)"
-        num_pattern = r"\d{1,3}(?:[.,\']\d{3})*"
+        num_pattern = r"\d{1,3}(?:[.,\s\']\d{3})*(?:[.,]\d{2})?"
         full_pattern = (
             rf"{currency_pattern}\s*{num_pattern}"
             rf"(?:\s*-\s*{currency_pattern}?\s*{num_pattern})?"
@@ -112,10 +101,9 @@ class TextCleaner:
         return ""
 
     def extract_experience_regex(self, text: str) -> str:
-        """Busca patrones comunes de experiencia en el texto crudo."""
+        """Busca patrones de experiencia en el texto crudo."""
         if not text:
             return ""
-        # Buscar X+ años, X a Y años, X years
         match = re.search(
             r"(\d+)\+?\s*(a\s*\d+)?\s*(años|years)\b", text, re.IGNORECASE
         )
@@ -123,26 +111,23 @@ class TextCleaner:
             return match.group(0).strip()
         return ""
 
-    def clean(self, offer) -> object:
+    def clean(self, offer: JobOffer) -> JobOffer:
         """
-        Aplica limpieza a todos los campos del JobOffer.
-        Retorna una nueva instancia (inmutabilidad del dataclass).
-
-        Args:
-            offer: JobOffer dataclass instance.
-
-        Returns:
-            Nueva instancia de JobOffer con campos limpiados.
+        Aplica limpieza integral a los campos de JobOffer retornando una nueva instancia.
         """
         clean_desc = self.clean_text_field(offer.full_description)
 
         salary = offer.salary.strip()
-        if not salary:
-            salary = self.extract_salary_regex(clean_desc)
+        if not salary or salary.lower() == "no especificado":
+            extracted_sal = self.extract_salary_regex(clean_desc)
+            if extracted_sal:
+                salary = extracted_sal
 
         experience = offer.experience_years.strip().lower()
-        if not experience:
-            experience = self.extract_experience_regex(clean_desc)
+        if not experience or experience == "no especificado":
+            extracted_exp = self.extract_experience_regex(clean_desc)
+            if extracted_exp:
+                experience = extracted_exp
 
         return dc_replace(
             offer,
@@ -152,7 +137,7 @@ class TextCleaner:
             full_description=clean_desc,
             hard_skills=self.clean_skills_list(offer.hard_skills),
             soft_skills=self.clean_skills_list(offer.soft_skills),
-            experience_years=experience,
-            education_level=offer.education_level.strip().lower(),
-            salary=salary,
+            experience_years=experience or "No especificado",
+            education_level=offer.education_level.strip().lower() or "No especificado",
+            salary=salary or "A convenir",
         )

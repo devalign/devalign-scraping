@@ -8,42 +8,44 @@ Extrae ofertas laborales desde el feed RSS oficial de WWR
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-import requests
-from bs4 import BeautifulSoup
-import re
 from email.utils import parsedate_to_datetime
+from bs4 import BeautifulSoup
 
-from src.base_parser import BaseParser
-from src.getonboard_parser import GetOnBoardParser
-from src.parser import JobOffer
+from src.base_parser import HttpParser
+from src.models import JobOffer
+from src.taxonomy import SkillTaxonomyService
 
-# Constantes
 RSS_URL = "https://weworkremotely.com/categories/remote-programming-jobs.rss"
-
 HTTP_HEADERS = {
     "User-Agent": "DevAlign Scraper (https://github.com/devalign/devalign-scraping)",
 }
 
 
-class WeworkremotelyParser(BaseParser):
+class WeworkremotelyParser(HttpParser):
     SITE_NAME = "weworkremotely"
     DEFAULT_BASE_URL = "https://weworkremotely.com"
 
     def __init__(self):
+        super().__init__(headers=HTTP_HEADERS, timeout=15)
         self._job_data_cache: dict[str, dict] = {}
         self._fetched = False
+        self._taxonomy = SkillTaxonomyService.get_instance()
 
-    def fetch_job_listings(self, page, current_page: int) -> list[tuple[str, str]]:
+    def fetch_job_listings(
+        self, current_page: int = 1, page=None, **kwargs
+    ) -> list[tuple[str, str]]:
+        if not isinstance(current_page, int) and isinstance(page, int):
+            current_page, page = page, current_page
         if self._fetched and current_page > 1:
             return []
 
-        resp = requests.get(RSS_URL, headers=HTTP_HEADERS, timeout=15)
-        resp.raise_for_status()
-
         try:
+            resp = self.session.get(RSS_URL, timeout=self.timeout)
+            resp.raise_for_status()
             root = ET.fromstring(resp.content)
             items = root.findall(".//item")
-        except ET.ParseError:
+        except Exception as e:
+            print(f"   [WWR-ERROR] Error al cargar RSS: {e}")
             return []
 
         entries = []
@@ -72,7 +74,11 @@ class WeworkremotelyParser(BaseParser):
         self._fetched = True
         return entries
 
-    def fetch_and_parse_job(self, page, url: str) -> JobOffer:
+    def fetch_and_parse_job(self, url: str = "", page=None, **kwargs) -> JobOffer:
+        if not isinstance(url, str) and isinstance(page, str):
+            url, page = page, url
+        if not url and "url" in kwargs:
+            url = kwargs["url"]
         job_data = self._job_data_cache.get(url, {})
 
         raw_html = job_data.get("description", "")
@@ -84,7 +90,6 @@ class WeworkremotelyParser(BaseParser):
 
         offer = JobOffer(source_url=url, portal=self.SITE_NAME)
 
-        # El título en WWR suele venir como "Empresa: Título del puesto"
         raw_title = job_data.get("title", "")
         if ":" in raw_title:
             company, job_title = raw_title.split(":", 1)
@@ -110,21 +115,10 @@ class WeworkremotelyParser(BaseParser):
         category = job_data.get("category", "")
         extracted_skills = set()
         if category:
-            extracted_skills.add(category.lower())
+            extracted_skills.add(category.lower().strip())
 
-        desc_lower = description_text.lower()
-        for kw in GetOnBoardParser.HARD_SKILLS_KEYWORDS:
-            if re.search(r"\b" + re.escape(kw) + r"\b", desc_lower):
-                extracted_skills.add(kw)
-
-        # En WWR (siendo el feed de programación) podemos incluir la categoría
-        # junto con las skills validadas.
-        valid_skills = [
-            s
-            for s in extracted_skills
-            if s in GetOnBoardParser.HARD_SKILLS_KEYWORDS or s == category.lower()
-        ]
-
-        offer.hard_skills = valid_skills
+        hard_skills, soft_skills = self._taxonomy.extract_skills(description_text)
+        offer.hard_skills = sorted(list(set(hard_skills) | extracted_skills))
+        offer.soft_skills = soft_skills
 
         return offer
