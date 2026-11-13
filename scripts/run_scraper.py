@@ -23,6 +23,7 @@ import random
 import signal
 import sys
 import time
+from contextlib import nullcontext
 
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -51,6 +52,7 @@ from src.supabase_exporter import SupabaseExporter  # noqa: E402
 from src.remotive_parser import RemotiveParser  # noqa: E402
 from src.arbeitnow_parser import ArbeitnowParser  # noqa: E402
 from src.weworkremotely_parser import WeworkremotelyParser  # noqa: E402
+from src.taxonomy import SkillTaxonomyService  # noqa: E402
 
 # Cargar .env si existe
 load_dotenv()
@@ -320,8 +322,9 @@ def run(
         flush_every=FLUSH_EVERY,
     )
 
-    # ── Pre-sembrar URLs desde Supabase ───────────────────────────────
+    # ── Sincronizar taxonomía y pre-sembrar URLs desde Supabase ───────
     if not no_supabase and exporter:
+        SkillTaxonomyService.get_instance().sync_with_supabase(exporter)
         existing_urls = exporter.get_existing_urls(portal_name=site)
         session.preseed_processed_urls(existing_urls)
 
@@ -358,13 +361,14 @@ def run(
     print(f"   Checkpoint:  cada {FLUSH_EVERY} ofertas")
     print(f"{'-' * 50}")
 
-    # ── GetOnBoard usa API REST; no abrimos Playwright ─────────────────
+    # ── Lazy Browser: Solo abrimos Playwright si el sitio lo requiere ───
     needs_browser = site == "computrabajo"
+    browser_ctx = BrowserManager(headless=headless) if needs_browser else nullcontext()
 
     # ── Loop principal ─────────────────────────────────────────────────
     try:
-        with BrowserManager(headless=headless) as context:
-            page = context.new_page() if needs_browser else None
+        with browser_ctx as context:
+            page = context.new_page() if (needs_browser and context) else None
 
             for term in terms:
                 if session.should_stop or session.count >= target_jobs:

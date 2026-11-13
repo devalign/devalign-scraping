@@ -1,5 +1,6 @@
 # Datos — NUNCA subir datos reales al repositorio
-data/
+data/*
+!data/skills_taxonomy.json
 
 # Entorno
 .env

@@ -307,8 +307,16 @@ class SessionManager:
         records = [_offer_to_dict(o) for o in self._collected]
 
         # Supabase
+        supabase_ok = True
         if exporter:
-            exporter.save_dicts(records)
+            try:
+                exporter.save_dicts(records)
+            except Exception as e:
+                supabase_ok = False
+                print(
+                    f"[!] Supabase falló: {e}. "
+                    "Los checkpoints se conservarán intactos para reanudar."
+                )
 
         # JSON local
         os.makedirs(os.path.dirname(self.output_file) or ".", exist_ok=True)
@@ -318,8 +326,8 @@ class SessionManager:
 
         print(f"\n[OK] Datos guardados en: {self.output_file}")
 
-        # Eliminar checkpoints si terminó con éxito (no fue interrumpido)
-        if not self._shutdown_requested and self._session_checkpoints:
+        # Eliminar checkpoints si terminó con éxito (no fue interrumpido Y supabase no falló)
+        if not self._shutdown_requested and supabase_ok and self._session_checkpoints:
             cleaned = 0
             for ckpt in self._session_checkpoints:
                 try:
